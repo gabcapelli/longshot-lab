@@ -36,7 +36,7 @@ class TestPrecosNosLeads(unittest.TestCase):
     def test_le_o_ultimo_preco_antes_do_lead(self):
         self._com_historico([(FIM - 10 * H, 0.20), (FIM - 7 * H, 0.30),
                              (FIM - 5 * H, 0.40), (FIM - 1 * H, 0.90)])
-        r = fetch.precos_nos_leads("t", FIM, leads=(6,), min_pontos=2)
+        r, _final = fetch.precos_nos_leads("t", FIM, leads=(6,), min_pontos=2)
         self.assertIn(6, r)
         self.assertAlmostEqual(r[6]["preco"], 0.30, places=9,
                                msg="pegou preco posterior ao instante medido")
@@ -45,19 +45,19 @@ class TestPrecosNosLeads(unittest.TestCase):
     def test_rejeita_serie_constante(self):
         """Mercado que nunca negociou: serie inteira no valor inicial."""
         self._com_historico([(FIM - (12 - i) * H, 0.50) for i in range(6)])
-        r = fetch.precos_nos_leads("t", FIM, leads=(6,), min_pontos=2)
+        r, _final = fetch.precos_nos_leads("t", FIM, leads=(6,), min_pontos=2)
         self.assertEqual(r, {}, "aceitou preco de mercado que nunca negociou")
 
     def test_rejeita_historico_curto_demais(self):
         self._com_historico([(FIM - 9 * H, 0.10), (FIM - 8 * H, 0.20)])
-        r = fetch.precos_nos_leads("t", FIM, leads=(6,), min_pontos=3)
+        r, _final = fetch.precos_nos_leads("t", FIM, leads=(6,), min_pontos=3)
         self.assertEqual(r, {}, "aceitou preco com pontos de menos")
 
     def test_rejeita_preco_velho_demais(self):
         """Ultimo negocio 20h antes do instante medido, tolerancia de 6h."""
         self._com_historico([(FIM - 40 * H, 0.05), (FIM - 30 * H, 0.06),
                              (FIM - 26 * H, 0.05)])
-        r = fetch.precos_nos_leads("t", FIM, leads=(6,), min_pontos=2,
+        r, _final = fetch.precos_nos_leads("t", FIM, leads=(6,), min_pontos=2,
                                    max_defasagem_h=6)
         self.assertEqual(r, {}, "aceitou preco com 20h de defasagem")
 
@@ -66,7 +66,7 @@ class TestPrecosNosLeads(unittest.TestCase):
         e por isso que a tabela de sensibilidade consegue existir."""
         self._com_historico([(FIM - 40 * H, 0.05), (FIM - 30 * H, 0.06),
                              (FIM - 26 * H, 0.05)])
-        r = fetch.precos_nos_leads("t", FIM, leads=(6,), min_pontos=2,
+        r, _final = fetch.precos_nos_leads("t", FIM, leads=(6,), min_pontos=2,
                                    max_defasagem_h=48)
         self.assertIn(6, r)
         self.assertAlmostEqual(r[6]["defasagem_h"], 20.0, places=6)
@@ -75,10 +75,41 @@ class TestPrecosNosLeads(unittest.TestCase):
         """Um lead pode existir e o outro nao, na mesma serie."""
         self._com_historico([(FIM - 30 * H, 0.10), (FIM - 25 * H, 0.15),
                              (FIM - 23 * H, 0.20), (FIM - 2 * H, 0.80)])
-        r = fetch.precos_nos_leads("t", FIM, leads=(6, 24), min_pontos=2,
+        r, _final = fetch.precos_nos_leads("t", FIM, leads=(6, 24), min_pontos=2,
                                    max_defasagem_h=6)
         self.assertIn(24, r, "lead de 24h deveria existir (negocio 1h antes)")
         self.assertNotIn(6, r, "lead de 6h deveria cair por defasagem de 17h")
+
+
+class TestPrecoFinal(unittest.TestCase):
+    """O preco final e a verificacao de alinhamento token/desfecho."""
+
+    def setUp(self):
+        self._orig = fetch.historico_preco
+
+    def tearDown(self):
+        fetch.historico_preco = self._orig
+
+    def test_devolve_o_ultimo_preco_da_serie(self):
+        fetch.historico_preco = lambda _t, fidelity=60: [
+            (FIM - 9 * H, 0.30), (FIM - 5 * H, 0.60), (FIM - 1 * H, 0.98)]
+        _r, final = fetch.precos_nos_leads("t", FIM, leads=(6,), min_pontos=2)
+        self.assertAlmostEqual(final, 0.98, places=9)
+
+    def test_preco_final_existe_mesmo_sem_lead_valido(self):
+        """O alinhamento precisa poder ser conferido ainda que nenhum lead
+        sobreviva aos filtros -- do contrario a verificacao so olharia os
+        mercados que ja passaram, que e onde ela menos ajuda."""
+        fetch.historico_preco = lambda _t, fidelity=60: [(FIM - 2 * H, 0.97)]
+        r, final = fetch.precos_nos_leads("t", FIM, leads=(6,), min_pontos=3)
+        self.assertEqual(r, {})
+        self.assertAlmostEqual(final, 0.97, places=9)
+
+    def test_sem_historico_devolve_none(self):
+        fetch.historico_preco = lambda _t, fidelity=60: []
+        r, final = fetch.precos_nos_leads("t", FIM, leads=(6,))
+        self.assertEqual(r, {})
+        self.assertIsNone(final)
 
 
 if __name__ == "__main__":

@@ -94,7 +94,8 @@ def coletar(args, leads):
             descartes["data ilegivel"] = descartes.get("data ilegivel", 0) + 1
             continue
         try:
-            precos = fetch.precos_nos_leads(lido["token_sim"], fim, leads=leads)
+            precos, preco_final = fetch.precos_nos_leads(
+                lido["token_sim"], fim, leads=leads)
         except RuntimeError:
             descartes["historico indisponivel"] = descartes.get("historico indisponivel", 0) + 1
             continue
@@ -106,7 +107,7 @@ def coletar(args, leads):
             if horas not in precos:
                 k = f"sem preco no lead de {horas}h"
                 descartes[k] = descartes.get(k, 0) + 1
-        mercados.append({**lido, "ts_fim": fim,
+        mercados.append({**lido, "ts_fim": fim, "preco_final": preco_final,
                          "precos": {str(h): d["preco"] for h, d in precos.items()},
                          "defasagens": {str(h): d["defasagem_h"] for h, d in precos.items()}})
         if (i + 1) % 400 == 0:
@@ -175,6 +176,24 @@ def main(argv=None):
     if len(mercados) < 100:
         log("ERRO: mercados de menos para concluir qualquer coisa.")
         return 1
+
+    # VERIFICACAO DE ALINHAMENTO. O token cujo preco converge para 1 tem de ser
+    # o vencedor registrado. Se isso nao bater, a ordem de clobTokenIds nao
+    # corresponde a de outcomes, e o estudo estaria lendo o preco do lado
+    # errado -- o que faz o lado barato parecer ganhar sempre, produzindo
+    # exatamente a aparencia de azarao subprecificado.
+    com_final = [m for m in mercados if m.get("preco_final") is not None]
+    if com_final:
+        bate = sum(1 for m in com_final
+                   if (m["preco_final"] > 0.5) == (m["desfecho_sim"] == 1))
+        alinhamento = bate / len(com_final)
+        log(f"[1b/5] Alinhamento token/desfecho: {bate}/{len(com_final)} "
+            f"({alinhamento:.1%})")
+        if alinhamento < 0.9:
+            log("       ATENCAO: alinhamento baixo. O preco lido provavelmente e "
+                "do lado oposto ao desfecho registrado; o resultado nao vale.")
+    else:
+        alinhamento = None
 
     fins = sorted(m["ts_fim"] for m in mercados)
     log(f"[2/5] Periodo coberto: {datetime.fromtimestamp(fins[0], tz=timezone.utc):%Y-%m-%d}"
@@ -246,7 +265,7 @@ def main(argv=None):
 
     log("[4/5] Relatorio...")
     ctx = {"args": vars(args), "leads": leads, "descartes": descartes,
-           "n": len(mercados),
+           "n": len(mercados), "alinhamento": alinhamento,
            "periodo": [f"{datetime.fromtimestamp(fins[0], tz=timezone.utc):%Y-%m-%d}",
                        f"{datetime.fromtimestamp(fins[-1], tz=timezone.utc):%Y-%m-%d}"],
            "segundos": round(time.time() - t0, 1)}
@@ -285,6 +304,19 @@ def escrever(ctx, resultados, sens):
     suspeito = max((resultados[h]["tudo"].get("fracao_no_inicial", 0.0)
                     for h in resultados), default=0.0)
     L.append("## Leitura rapida\n")
+    al = ctx.get("alinhamento")
+    if al is not None:
+        if al < 0.9:
+            L.append(f"> **AVISO: o preco lido bate com o desfecho em apenas "
+                     f"{al:.1%} dos mercados.** Isso indica que a ordem de "
+                     "`clobTokenIds` nao corresponde a de `outcomes`, ou seja, o "
+                     "estudo esta lendo o preco do lado ERRADO. Um lado barato "
+                     "que 'ganha sempre' e o sintoma classico disso. **Nenhum "
+                     "numero abaixo vale enquanto isso nao for corrigido.**\n")
+        else:
+            L.append(f"*Verificacao de alinhamento: o preco final do token lido "
+                     f"converge para o desfecho registrado em {al:.1%} dos "
+                     "mercados.*\n")
     if suspeito > 0.25:
         L.append(f"> **AVISO: {suspeito:.0%} dos precos estao a menos de 2 centavos "
                  "de 0,50.** Isso costuma significar que o preco lido e o valor "

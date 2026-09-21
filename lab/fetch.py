@@ -295,10 +295,19 @@ def precos_nos_leads(token_id, ancora_ts, leads=(6, 24), min_pontos=3,
     sozinho fabrica a aparencia de azarao barato. Quem chama deve filtrar por
     defasagem e medir a sensibilidade do resultado a esse filtro.
 
-    Devolve {horas: {"ts", "preco", "defasagem_h"}} para os leads validos.
+    Devolve (precos, preco_final):
+      precos      {horas: {"ts", "preco", "defasagem_h"}} para os leads validos
+      preco_final ultimo preco da serie, ou None
+
+    `preco_final` nao entra na analise: serve de verificacao de alinhamento.
+    O token cujo preco converge para 1 tem de ser o vencedor registrado; se
+    nao for, a ordem de clobTokenIds nao corresponde a de outcomes e o estudo
+    estaria lendo o preco do lado errado -- o que faz o lado barato parecer
+    ganhar sempre.
     """
     hist = historico_preco(token_id)
     out = {}
+    preco_final = float(hist[-1][1]) if hist else None
     for horas in leads:
         alvo = ancora_ts - horas * 3600
         anteriores = [(t, p) for t, p in hist if t <= alvo]
@@ -313,7 +322,7 @@ def precos_nos_leads(token_id, ancora_ts, leads=(6, 24), min_pontos=3,
             continue
         out[horas] = {"ts": int(t_uso), "preco": float(preco),
                       "defasagem_h": float(defasagem_h)}
-    return out
+    return out, preco_final
 
 
 def sondar(n_amostra=60):
