@@ -1,22 +1,27 @@
 # Vies favorito-azarao em prediction markets — resultado
 
-Gerado em 2026-09-21 16:08 UTC · 2027 mercados resolvidos · encerrados entre 2026-08-22 e 2026-09-16 · 1092.1s
+Gerado em 2026-09-21 16:37 UTC · 2493 mercados resolvidos · encerrados entre 2026-08-22 e 2026-09-21 · 1356.6s
 
 ## Leitura rapida
 
-*Verificacao de alinhamento: o preco final do token lido converge para o desfecho registrado em 97.3% dos mercados.*
+*Verificacao de alinhamento: o preco final do token lido converge para o desfecho registrado em 97.8% dos mercados.*
 
 Lead principal: **6h antes do fim** (cobertura 100.0% dos mercados).
 
-**Existe vies, na direcao CONTRARIA a esperada:** azarao custa menos do que vale. Contraria a literatura e exigiria explicacao antes de qualquer aposta.
+**Sem evidencia de vies.** O desvio observado cabe dentro do que a sorte produziria num mercado calibrado.
 
-- Entre as apostas precificadas até 10%: preço médio **0.028**, aconteceu de fato **0.061** das vezes.
+- Entre as apostas precificadas até 10%: preço médio **0.021**, aconteceu de fato **0.024** das vezes.
 
-- Vies (preco − frequencia real): **-0.0333** em 196 apostas de azarao, p = 0.0068
+- Vies (preco − frequencia real): **-0.0028** em 374 apostas de azarao, p = 0.6791
 
-- Faixa que a nula produziria: [-0.0231, +0.0178]
+- Faixa que a nula produziria: [-0.0162, +0.0132]
 
-- Vender azarao (preco ≤ 0.10, spread 0.010): 105 apostas, **-0.0722R**, IC 95% [-0.110, +0.035]
+- Comprar azarao (preco ≤ 0.10, spread 0.010): 374 apostas, **-0.6438R**, IC 95% [-1.000, -0.551]
+
+- Vender azarao (preco ≤ 0.10, spread 0.010): 196 apostas, **-0.0123R**, IC 95% [-0.028, +0.032]
+
+
+Se o vies aponta azarao barato, a operacao que ganharia e **comprar**. Medir so a venda responderia a pergunta errada.
 
 
 ## Como ler
@@ -43,133 +48,145 @@ Lead principal: **6h antes do fim** (cobertura 100.0% dos mercados).
 Cobertura: 100.0% dos mercados coletados.
 
 
-**Existe vies, na direcao CONTRARIA a esperada:** azarao custa menos do que vale. Contraria a literatura e exigiria explicacao antes de qualquer aposta.
+**Sem evidencia de vies.** O desvio observado cabe dentro do que a sorte produziria num mercado calibrado.
 
 
 | Recorte | Mercados | Azaroes (≤10%) | Vies no azarao | p-valor | Backtest (n) | Expectancia | IC 95% |
 |---|---|---|---|---|---|---|---|
-| In-sample | 1216 | 143 | -0.0470 | 0.0034 | 94 | -0.0821R | [-0.115, -0.034] |
-| Out-of-sample | 811 | 196 | -0.0333 | 0.0068 | 105 | -0.0722R | [-0.110, +0.035] |
+| In-sample | 1495 | 511 | -0.0193 | 0.0022 | 229 | -0.0521R | [-0.097, -0.024] |
+| Out-of-sample | 998 | 374 | -0.0028 | 0.6791 | 196 | -0.0123R | [-0.028, +0.032] |
 
 
 ## Calibracao — In-sample, lead 6h
 
 | Faixa de preco | Mercados | Preco medio | Aconteceu de fato | IC 95% | Diferenca |
 |---|---|---|---|---|---|
-| 0%–2% | 60 | 0.003 | 0.000 | [0.000, 0.060] | +0.003 |
-| 2%–5% | 29 | 0.034 | 0.069 | [0.019, 0.220] | -0.035 |
-| 5%–10% | 54 | 0.076 | 0.185 | [0.104, 0.308] | -0.109 **\*** |
-| 10%–20% | 126 | 0.156 | 0.135 | [0.086, 0.205] | +0.022 |
-| 20%–35% | 341 | 0.279 | 0.311 | [0.264, 0.362] | -0.032 |
-| 35%–50% | 582 | 0.430 | 0.424 | [0.385, 0.465] | +0.006 |
-| 50%–65% | 621 | 0.563 | 0.570 | [0.531, 0.608] | -0.007 |
-| 65%–80% | 348 | 0.719 | 0.687 | [0.636, 0.733] | +0.032 |
-| 80%–90% | 128 | 0.843 | 0.859 | [0.789, 0.909] | -0.017 |
-| 90%–95% | 54 | 0.924 | 0.815 | [0.692, 0.896] | +0.109 **\*** |
-| 95%–98% | 28 | 0.965 | 0.929 | [0.774, 0.980] | +0.037 |
-| 98%–100% | 61 | 0.997 | 1.000 | [0.941, 1.000] | -0.003 |
+| 0%–2% | 364 | 0.003 | 0.011 | [0.004, 0.028] | -0.008 **\*** |
+| 2%–5% | 70 | 0.033 | 0.043 | [0.015, 0.119] | -0.010 |
+| 5%–10% | 75 | 0.072 | 0.147 | [0.084, 0.244] | -0.074 **\*** |
+| 10%–20% | 129 | 0.153 | 0.163 | [0.109, 0.236] | -0.010 |
+| 20%–35% | 360 | 0.277 | 0.294 | [0.250, 0.343] | -0.018 |
+| 35%–50% | 478 | 0.434 | 0.435 | [0.391, 0.480] | -0.001 |
+| 50%–65% | 511 | 0.560 | 0.560 | [0.516, 0.602] | +0.001 |
+| 65%–80% | 364 | 0.722 | 0.706 | [0.657, 0.750] | +0.016 |
+| 80%–90% | 128 | 0.846 | 0.836 | [0.762, 0.890] | +0.010 |
+| 90%–95% | 75 | 0.926 | 0.840 | [0.741, 0.906] | +0.086 **\*** |
+| 95%–98% | 70 | 0.966 | 0.957 | [0.881, 0.985] | +0.009 |
+| 98%–100% | 366 | 0.997 | 0.989 | [0.972, 0.996] | +0.007 **\*** |
 
 *\* preco medio fora do IC da frequencia observada.*
+
+Leia esta tabela como tendo METADE das linhas independentes: como cada mercado entra com os dois lados, a faixa 10-20% e a faixa 80-90% contem os MESMOS mercados, espelhados. A simetria entre elas e construcao, nao confirmacao.
 
 
 ## Calibracao — Out-of-sample, lead 6h
 
 | Faixa de preco | Mercados | Preco medio | Aconteceu de fato | IC 95% | Diferenca |
 |---|---|---|---|---|---|
-| 0%–2% | 113 | 0.003 | 0.000 | [0.000, 0.033] | +0.003 |
-| 2%–5% | 26 | 0.037 | 0.077 | [0.021, 0.241] | -0.040 |
-| 5%–10% | 55 | 0.072 | 0.182 | [0.102, 0.303] | -0.110 **\*** |
-| 10%–20% | 89 | 0.154 | 0.303 | [0.218, 0.405] | -0.150 **\*** |
-| 20%–35% | 172 | 0.278 | 0.326 | [0.260, 0.399] | -0.047 |
-| 35%–50% | 345 | 0.430 | 0.429 | [0.378, 0.482] | +0.001 |
-| 50%–65% | 366 | 0.565 | 0.566 | [0.514, 0.615] | -0.000 |
-| 65%–80% | 173 | 0.721 | 0.676 | [0.603, 0.742] | +0.045 |
-| 80%–90% | 87 | 0.845 | 0.690 | [0.586, 0.777] | +0.156 **\*** |
-| 90%–95% | 55 | 0.926 | 0.836 | [0.717, 0.911] | +0.090 **\*** |
-| 95%–98% | 28 | 0.962 | 0.893 | [0.728, 0.963] | +0.069 |
-| 98%–100% | 113 | 0.997 | 1.000 | [0.967, 1.000] | -0.003 |
+| 0%–2% | 249 | 0.004 | 0.000 | [0.000, 0.015] | +0.004 |
+| 2%–5% | 54 | 0.034 | 0.019 | [0.003, 0.098] | +0.015 |
+| 5%–10% | 69 | 0.072 | 0.116 | [0.060, 0.212] | -0.044 |
+| 10%–20% | 98 | 0.154 | 0.265 | [0.188, 0.360] | -0.111 **\*** |
+| 20%–35% | 191 | 0.274 | 0.366 | [0.301, 0.437] | -0.092 **\*** |
+| 35%–50% | 328 | 0.432 | 0.402 | [0.351, 0.456] | +0.030 |
+| 50%–65% | 346 | 0.564 | 0.592 | [0.540, 0.643] | -0.028 |
+| 65%–80% | 190 | 0.725 | 0.632 | [0.561, 0.697] | +0.094 **\*** |
+| 80%–90% | 97 | 0.844 | 0.732 | [0.636, 0.810] | +0.112 **\*** |
+| 90%–95% | 69 | 0.926 | 0.884 | [0.788, 0.940] | +0.042 |
+| 95%–98% | 53 | 0.965 | 0.981 | [0.901, 0.997] | -0.016 |
+| 98%–100% | 252 | 0.996 | 1.000 | [0.985, 1.000] | -0.004 |
 
 *\* preco medio fora do IC da frequencia observada.*
+
+Leia esta tabela como tendo METADE das linhas independentes: como cada mercado entra com os dois lados, a faixa 10-20% e a faixa 80-90% contem os MESMOS mercados, espelhados. A simetria entre elas e construcao, nao confirmacao.
 
 
 ## Sensibilidade ao custo — lead 6h (out-of-sample)
 
-| Spread | Apostas | Expectancia | IC 95% |
-|---|---|---|---|
-| 0.000 | 129 | -0.0106R | [-0.023, +0.019] |
-| 0.005 | 73 | -0.0218R | [-0.054, +0.016] |
-| 0.010 | 69 | -0.0257R | [-0.061, +0.013] |
-| 0.020 | 66 | -0.0321R | [-0.068, +0.012] |
+| Spread | Comprar: expectancia | IC 95% | Vender: expectancia | IC 95% |
+|---|---|---|---|---|
+| 0.000 | -0.6130R | [-1.000, -0.512] | -0.0032R | [-0.011, +0.019] |
+| 0.005 | -0.6291R | [-1.000, -0.532] | -0.0087R | [-0.022, +0.027] |
+| 0.010 | -0.6438R | [-1.000, -0.551] | -0.0123R | [-0.028, +0.032] |
+| 0.020 | -0.6698R | [-1.000, -0.584] | -0.0206R | [-0.038, +0.035] |
+| 0.030 | -0.6920R | [-1.000, -0.612] | -0.0296R | [-0.050, +0.038] |
+| 0.050 | -0.7282R | [-1.000, -0.658] | -0.0461R | [-0.074, +0.027] |
 
-Um vies pode ser real e mesmo assim nao ser operavel: num mercado de 5 centavos, 1 centavo de spread leva um quinto do premio.
+**Esta tabela decide se o achado vira dinheiro.** Quem compra paga a ponta de venda; num mercado de 3 centavos, 1 centavo de spread e um terco do preco. Um vies real pode nao sobreviver ao custo, e ai ele e verdadeiro e inutil ao mesmo tempo.
 
 
 ---
 
 # Lead de 24h (secundario)
 
-Cobertura: 77.2% dos mercados coletados.
+Cobertura: 84.1% dos mercados coletados.
 
 
-**Existe vies, na direcao CONTRARIA a esperada:** azarao custa menos do que vale. Contraria a literatura e exigiria explicacao antes de qualquer aposta.
+**Sem evidencia de vies.** O desvio observado cabe dentro do que a sorte produziria num mercado calibrado.
 
 
 | Recorte | Mercados | Azaroes (≤10%) | Vies no azarao | p-valor | Backtest (n) | Expectancia | IC 95% |
 |---|---|---|---|---|---|---|---|
-| In-sample | 938 | 93 | -0.0798 | 0.0030 | 89 | -0.0824R | [-0.094, -0.068] |
-| Out-of-sample | 626 | 106 | -0.0519 | 0.0288 | 101 | -0.0633R | [-0.092, +0.063] |
+| In-sample | 1258 | 430 | -0.0206 | 0.0040 | 248 | -0.0448R | [-0.053, -0.038] |
+| Out-of-sample | 839 | 318 | -0.0003 | 0.9528 | 192 | -0.0071R | [-0.020, +0.030] |
 
 
 ## Calibracao — In-sample, lead 24h
 
 | Faixa de preco | Mercados | Preco medio | Aconteceu de fato | IC 95% | Diferenca |
 |---|---|---|---|---|---|
-| 0%–2% | 20 | 0.010 | 0.050 | [0.009, 0.236] | -0.040 |
-| 2%–5% | 28 | 0.033 | 0.071 | [0.020, 0.226] | -0.038 |
-| 5%–10% | 40 | 0.074 | 0.225 | [0.123, 0.375] | -0.151 **\*** |
-| 10%–20% | 121 | 0.150 | 0.149 | [0.096, 0.223] | +0.002 |
-| 20%–35% | 281 | 0.281 | 0.310 | [0.258, 0.366] | -0.028 |
-| 35%–50% | 436 | 0.427 | 0.401 | [0.356, 0.448] | +0.026 |
-| 50%–65% | 454 | 0.568 | 0.590 | [0.544, 0.635] | -0.022 |
-| 65%–80% | 284 | 0.716 | 0.690 | [0.634, 0.741] | +0.026 |
-| 80%–90% | 119 | 0.846 | 0.849 | [0.774, 0.902] | -0.002 |
-| 90%–95% | 45 | 0.923 | 0.800 | [0.662, 0.891] | +0.123 **\*** |
-| 95%–98% | 28 | 0.967 | 0.929 | [0.774, 0.980] | +0.038 |
-| 98%–100% | 20 | 0.990 | 0.950 | [0.764, 0.991] | +0.040 |
+| 0%–2% | 286 | 0.005 | 0.000 | [0.000, 0.013] | +0.005 |
+| 2%–5% | 71 | 0.033 | 0.085 | [0.039, 0.172] | -0.051 **\*** |
+| 5%–10% | 68 | 0.072 | 0.162 | [0.093, 0.267] | -0.090 **\*** |
+| 10%–20% | 123 | 0.146 | 0.203 | [0.142, 0.283] | -0.057 |
+| 20%–35% | 297 | 0.277 | 0.300 | [0.250, 0.354] | -0.022 |
+| 35%–50% | 404 | 0.430 | 0.411 | [0.364, 0.459] | +0.019 |
+| 50%–65% | 415 | 0.566 | 0.578 | [0.530, 0.625] | -0.013 |
+| 65%–80% | 300 | 0.720 | 0.703 | [0.649, 0.752] | +0.017 |
+| 80%–90% | 122 | 0.850 | 0.803 | [0.724, 0.864] | +0.047 |
+| 90%–95% | 71 | 0.925 | 0.831 | [0.727, 0.901] | +0.094 **\*** |
+| 95%–98% | 69 | 0.966 | 0.913 | [0.823, 0.960] | +0.052 **\*** |
+| 98%–100% | 290 | 0.995 | 1.000 | [0.987, 1.000] | -0.005 |
 
 *\* preco medio fora do IC da frequencia observada.*
+
+Leia esta tabela como tendo METADE das linhas independentes: como cada mercado entra com os dois lados, a faixa 10-20% e a faixa 80-90% contem os MESMOS mercados, espelhados. A simetria entre elas e construcao, nao confirmacao.
 
 
 ## Calibracao — Out-of-sample, lead 24h
 
 | Faixa de preco | Mercados | Preco medio | Aconteceu de fato | IC 95% | Diferenca |
 |---|---|---|---|---|---|
-| 0%–2% | 17 | 0.011 | 0.000 | [0.000, 0.184] | +0.011 |
-| 2%–5% | 32 | 0.037 | 0.094 | [0.032, 0.242] | -0.056 |
-| 5%–10% | 56 | 0.072 | 0.125 | [0.062, 0.236] | -0.053 |
-| 10%–20% | 70 | 0.150 | 0.329 | [0.230, 0.445] | -0.179 **\*** |
-| 20%–35% | 175 | 0.279 | 0.343 | [0.277, 0.416] | -0.064 |
-| 35%–50% | 269 | 0.430 | 0.428 | [0.370, 0.487] | +0.002 |
-| 50%–65% | 279 | 0.566 | 0.566 | [0.508, 0.623] | -0.001 |
-| 65%–80% | 179 | 0.719 | 0.659 | [0.587, 0.725] | +0.060 |
-| 80%–90% | 69 | 0.849 | 0.681 | [0.564, 0.779] | +0.168 **\*** |
-| 90%–95% | 56 | 0.927 | 0.875 | [0.764, 0.938] | +0.052 |
-| 95%–98% | 33 | 0.962 | 0.879 | [0.727, 0.952] | +0.083 **\*** |
-| 98%–100% | 17 | 0.989 | 1.000 | [0.816, 1.000] | -0.011 |
+| 0%–2% | 189 | 0.005 | 0.000 | [0.000, 0.020] | +0.005 |
+| 2%–5% | 61 | 0.034 | 0.033 | [0.009, 0.112] | +0.001 |
+| 5%–10% | 66 | 0.072 | 0.076 | [0.033, 0.165] | -0.004 |
+| 10%–20% | 67 | 0.152 | 0.224 | [0.141, 0.337] | -0.072 |
+| 20%–35% | 186 | 0.276 | 0.355 | [0.290, 0.426] | -0.079 **\*** |
+| 35%–50% | 264 | 0.439 | 0.436 | [0.377, 0.496] | +0.003 |
+| 50%–65% | 271 | 0.557 | 0.557 | [0.498, 0.615] | -0.000 |
+| 65%–80% | 189 | 0.721 | 0.646 | [0.575, 0.710] | +0.076 **\*** |
+| 80%–90% | 67 | 0.845 | 0.791 | [0.679, 0.871] | +0.054 |
+| 90%–95% | 66 | 0.927 | 0.909 | [0.816, 0.958] | +0.018 |
+| 95%–98% | 63 | 0.965 | 0.968 | [0.891, 0.991] | -0.003 |
+| 98%–100% | 189 | 0.995 | 1.000 | [0.980, 1.000] | -0.005 |
 
 *\* preco medio fora do IC da frequencia observada.*
+
+Leia esta tabela como tendo METADE das linhas independentes: como cada mercado entra com os dois lados, a faixa 10-20% e a faixa 80-90% contem os MESMOS mercados, espelhados. A simetria entre elas e construcao, nao confirmacao.
 
 
 ## Sensibilidade ao custo — lead 24h (out-of-sample)
 
-| Spread | Apostas | Expectancia | IC 95% |
-|---|---|---|---|
-| 0.000 | 83 | -0.0227R | [-0.042, +0.036] |
-| 0.005 | 81 | -0.0258R | [-0.045, +0.051] |
-| 0.010 | 79 | -0.0291R | [-0.050, +0.048] |
-| 0.020 | 75 | -0.0358R | [-0.059, +0.042] |
+| Spread | Comprar: expectancia | IC 95% | Vender: expectancia | IC 95% |
+|---|---|---|---|---|
+| 0.000 | -0.5512R | [-1.000, -0.451] | -0.0004R | [-0.008, +0.020] |
+| 0.005 | -0.5723R | [-1.000, -0.477] | -0.0036R | [-0.015, +0.029] |
+| 0.010 | -0.5913R | [-1.000, -0.501] | -0.0071R | [-0.020, +0.030] |
+| 0.020 | -0.6244R | [-1.000, -0.542] | -0.0146R | [-0.031, +0.034] |
+| 0.030 | -0.6522R | [-1.000, -0.576] | -0.0213R | [-0.040, +0.038] |
+| 0.050 | -0.6966R | [-1.000, -0.630] | -0.0361R | [-0.058, +0.027] |
 
-Um vies pode ser real e mesmo assim nao ser operavel: num mercado de 5 centavos, 1 centavo de spread leva um quinto do premio.
+**Esta tabela decide se o achado vira dinheiro.** Quem compra paga a ponta de venda; num mercado de 3 centavos, 1 centavo de spread e um terco do preco. Um vies real pode nao sobreviver ao custo, e ai ele e verdadeiro e inutil ao mesmo tempo.
 
 
 ---
@@ -178,13 +195,13 @@ Um vies pode ser real e mesmo assim nao ser operavel: num mercado de 5 centavos,
 
 | Defasagem maxima | Mercados | Azaroes | Vies | p-valor |
 |---|---|---|---|---|
-| ≤ 0.5h | 389 | 105 | -0.0407 | 0.0074 |
-| ≤ 1h | 806 | 196 | -0.0333 | 0.0068 |
-| ≤ 2h | 811 | 196 | -0.0333 | 0.0068 |
-| ≤ 6h | 811 | 196 | -0.0333 | 0.0068 |
-| ≤ 12h | 811 | 196 | -0.0333 | 0.0068 |
-| ≤ 24h | 811 | 196 | -0.0333 | 0.0068 |
-| ≤ 48h | 811 | 196 | -0.0333 | 0.0068 |
+| ≤ 0.5h | 596 | 276 | -0.0023 | 0.6977 |
+| ≤ 1h | 997 | 374 | -0.0028 | 0.6791 |
+| ≤ 2h | 998 | 374 | -0.0028 | 0.6791 |
+| ≤ 6h | 998 | 374 | -0.0028 | 0.6791 |
+| ≤ 12h | 998 | 374 | -0.0028 | 0.6791 |
+| ≤ 24h | 998 | 374 | -0.0028 | 0.6791 |
+| ≤ 48h | 998 | 374 | -0.0028 | 0.6791 |
 
 **Esta e a tabela que decide se o achado e real.** O preco lido e o do ultimo negocio ANTES do instante medido. Se esse negocio aconteceu horas antes, o preco esta velho -- e um azarao que negociou a 0,05, subiu e ganhou entraria como 'custava 0,05 e aconteceu', fabricando sozinho a aparencia de azarao barato.
 
@@ -197,9 +214,9 @@ Se o vies encolher em direcao a zero conforme a tolerancia aperta, ele vinha de 
 
 | Motivo | Mercados |
 |---|---|
-| sem preco em nenhum lead | 1433 |
-| sem preco no lead de 24h | 463 |
-| sem desfecho definido | 40 |
+| sem preco em nenhum lead | 977 |
+| sem preco no lead de 24h | 396 |
+| sem desfecho definido | 30 |
 
 Se um motivo inesperado dominar, o problema e o leitor da API e nao o mercado. Os descartes por lead sao esperados: medem a cobertura.
 
