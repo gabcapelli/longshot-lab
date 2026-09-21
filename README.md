@@ -90,6 +90,72 @@ Um codigo que nunca acha nada passaria no teste de nivel sendo inutil -- e ai
 "nao achei vies no Polymarket" seria indistinguivel de "meu codigo nao acha
 vies nenhum". O CI roda essa validacao **antes** de tocar em dado real.
 
+## Resultado (2493 mercados, ago-set/2026)
+
+**O vies favorito-azarao nao existe nestes dados.** Azarao nao custa mais do
+que vale -- custa o que vale.
+
+| Recorte | Mercados | Azaroes (≤10%) | Vies | p-valor |
+|---|---|---|---|---|
+| In-sample, lead 6h | 1495 | 511 | −0,0193 | 0,0022 |
+| **Out-of-sample, lead 6h** | 998 | **374** | **−0,0028** | **0,68** |
+| Out-of-sample, lead 24h | 839 | 318 | −0,0003 | 0,95 |
+
+Entre as apostas de ate 10%: preco medio 0,021, aconteceu 0,024 das vezes.
+Diferenca indistinguivel de zero.
+
+### O in-sample mentiu, e o out-of-sample corrigiu
+
+O in-sample mostrou vies de −0,019 com p=0,0022 -- significativo, e na
+direcao contraria a literatura. Uma rodada anterior, com metade da amostra,
+chegou a mostrar −0,033 com p=0,0068.
+
+No out-of-sample, com o dobro do dado, o efeito colapsou para −0,0028 e
+p=0,68.
+
+Essa e a assinatura classica de flutuacao amostral: o achado anterior
+repousava em cerca de doze eventos. **E exatamente para isso que a separacao
+in/out-of-sample existe.** Sem ela, este repositorio teria publicado um
+"achado" com p<0,01 na direcao contraria a literatura -- o tipo de resultado
+que rende um texto empolgado e perde dinheiro.
+
+### Nenhum dos dois lados ganha dinheiro
+
+| Operacao | Apostas | Expectancia (spread 0,01) | IC 95% |
+|---|---|---|---|
+| Comprar azarao | 374 | −0,6438R | [−1,000, −0,551] |
+| Vender azarao | 196 | −0,0123R | [−0,028, +0,032] |
+
+Comprar perde feio mesmo com **custo zero** (−0,613R). O motivo esta na
+calibracao: a faixa de 0-2% tem 249 apostas com preco medio 0,004 e **nenhuma
+aconteceu**. Apostar valor igual em cada uma perde tudo, sempre. O mercado
+esta certo sobre o que e quase impossivel.
+
+Vender fica em torno de zero com o IC cruzando zero -- sem edge, nos dois
+sentidos.
+
+### Uma coisa que sobrou, e que NAO e um achado
+
+As faixas de 10-20% e 20-35% continuam desviando no out-of-sample: precificado
+a 0,154 acontece 0,265; precificado a 0,274 acontece 0,366.
+
+Isso **nao** e um resultado deste estudo, e nao deve ser tratado como tal. O
+limiar pre-registrado era 10%, e estas faixas estao fora dele: olhar para elas
+depois de ver o dado e escolher onde procurar com base no que se encontrou --
+o erro que o desenho inteiro existe para evitar. Lembrando ainda que 10-20% e
+65-80% sao os mesmos mercados espelhados.
+
+Vale como hipotese para um estudo proprio, com limiar pre-registrado e dado
+novo. Nao vale como motivo para apostar.
+
+### Limite de dado que nao da para contornar
+
+A API do Polymarket responde erro 500 para janelas com mais de ~30 dias. O
+estudo cobre 2026-08-22 a 2026-09-21 -- um mes, majoritariamente mercados
+esportivos. Por esta rota nao ha como estender a serie; confirmar ou derrubar
+o padrao das faixas medias exigiria coletar dado daqui para frente, ou outra
+fonte.
+
 ## Como rodar
 
 Pelo GitHub Actions (aba Actions -> "estudo" -> Run workflow), em dois modos:
