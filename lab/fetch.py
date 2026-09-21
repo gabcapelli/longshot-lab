@@ -190,64 +190,83 @@ def _iso(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def coletar_periodo(dias_min_fechado=7, dias_max=540, volume_min=10000,
-                    alvo=3000, pausa=0.08, verboso=True):
+def coletar_periodo(dias_min_fechado=7, dias_max=180, volume_min=10000,
+                    por_dia=40, alvo=4000, pausa=0.08, verboso=True):
     """
-    Varre mercados que JA TERMINARAM, caminhando para tras no tempo.
+    Varre mercados JA ENCERRADOS, caminhando para tras um dia por vez.
 
-    Por que nao basta paginar: ordenado por endDate decrescente, os primeiros
-    milhares de mercados tem data de fim em 2028-2029 -- sao apostas de
-    horizonte longo. Paginar por offset nunca alcanca o passado. A solucao e
-    mover a janela: a cada rodada, o teto vira a menor data de fim ja vista.
+    Por que nao basta paginar por offset: ordenado por endDate decrescente,
+    os primeiros milhares de mercados tem data de fim em 2028-2029 (apostas de
+    horizonte longo). A paginacao nunca alcanca o passado. A janela de data
+    resolve.
 
-    `dias_min_fechado` evita mercados recem-encerrados, cuja resolucao ainda
-    pode estar "proposed" e mudar.
+    Por que `por_dia` em vez de esgotar cada dia: o Polymarket fecha centenas
+    de mercados por dia, quase todos de esporte. Esgotar um dia antes de
+    passar ao anterior gastaria a cota inteira em duas semanas de calendario,
+    e o corte in/out-of-sample precisa de meses. Amostrar ate `por_dia` por
+    dia da cobertura temporal uniforme com a mesma quantidade de chamadas.
+
+    `dias_min_fechado` pula os mercados recem-encerrados, cuja resolucao pode
+    estar apenas "proposed" e ainda mudar.
     """
     from datetime import datetime, timedelta, timezone as _tz
     agora = datetime.now(_tz.utc)
-    teto = agora - timedelta(days=dias_min_fechado)
-    piso = agora - timedelta(days=dias_max)
-    coletados, rodadas = {}, 0
+    coletados, dia = {}, 0
+    total_dias = max(dias_max - dias_min_fechado, 1)
 
-    while len(coletados) < alvo and teto > piso and rodadas < 400:
-        rodadas += 1
+    while len(coletados) < alvo and dia < total_dias:
+        teto = agora - timedelta(days=dias_min_fechado + dia)
         params = {"order": "endDate", "ascending": "false",
                   "end_date_max": _iso(teto), "volume_num_min": volume_min}
-        fins_vistos, novos = [], 0
-        for offset in (0, 100, 200, 300, 400):
+        do_dia = 0
+        for offset in (0, 100, 200):
+            if do_dia >= por_dia or len(coletados) >= alvo:
+                break
             try:
                 lote = _buscar_lote(limit=100, offset=offset, **params)
             except RuntimeError as e:
                 if verboso:
-                    print(f"      lote falhou ({e}); segue")
+                    print(f"      janela {teto:%Y-%m-%d} falhou ({e}); segue")
                 break
             if not lote:
                 break
             for m in lote:
+                if do_dia >= por_dia or len(coletados) >= alvo:
+                    break
                 mid = str(m.get("id") or m.get("conditionId") or "")
-                fim = str(m.get("endDate") or "")
-                if fim:
-                    fins_vistos.append(fim)
                 if mid and mid not in coletados:
                     coletados[mid] = m
-                    novos += 1
+                    do_dia += 1
             time.sleep(pausa)
-            if len(coletados) >= alvo:
-                break
-        if not fins_vistos:
-            break
-        # move a janela para tras do menor fim visto; se nao andou, recua um dia
-        menor = min(fins_vistos)
-        try:
-            novo_teto = datetime.fromisoformat(menor.replace("Z", "+00:00")) - timedelta(seconds=1)
-        except ValueError:
-            novo_teto = teto - timedelta(days=1)
-        if novo_teto >= teto or novos == 0:
-            novo_teto = teto - timedelta(days=1)
-        teto = novo_teto
-        if verboso and rodadas % 10 == 0:
-            print(f"      {len(coletados)} mercados; janela ate {teto:%Y-%m-%d}")
+        dia += 1
+        if verboso and dia % 20 == 0:
+            print(f"      {len(coletados)} mercados; recuou ate {teto:%Y-%m-%d}")
     return list(coletados.values())
+
+
+def precos_nos_leads(token_id, fim_ts, leads=(6, 24)):
+    """
+    Preco do token a N horas do fim, para varios N, numa unica busca.
+
+    Cobertura medida por sonda em 2026-09-21: 1h e 6h em 100% dos mercados,
+    24h em 50%, 72h em 8%. O lead de 24h so existe em mercado de vida longa,
+    entao usa-lo sozinho enviesaria a amostra -- por isso o estudo mede mais
+    de um lead e reporta a cobertura de cada um.
+
+    Devolve {horas: (ts_usado, preco)} apenas para os leads disponiveis.
+    """
+    hist = historico_preco(token_id)
+    out = {}
+    for horas in leads:
+        alvo = fim_ts - horas * 3600
+        anteriores = [(t, p) for t, p in hist if t <= alvo]
+        if not anteriores:
+            continue
+        t_uso, preco = anteriores[-1]
+        if alvo - t_uso > 48 * 3600 or not (0.0 < preco < 1.0):
+            continue
+        out[horas] = (t_uso, preco)
+    return out
 
 
 def sondar(n_amostra=60):

@@ -1,10 +1,6 @@
 name: estudo
 
 on:
-  # O push serve so para o GitHub indexar o workflow; nao roda o estudo.
-  push:
-    paths:
-      - ".github/workflows/estudo.yml"
   workflow_dispatch:
     inputs:
       modo:
@@ -12,15 +8,21 @@ on:
         default: "estudo"
         type: choice
         options: [sondar, estudo]
-      max_mercados:
-        description: "Quantos mercados resolvidos coletar"
-        default: "3000"
-      lead_horas:
-        description: "Usar o preco de quantas horas antes do fim"
-        default: "24"
+      alvo:
+        description: "Quantos mercados coletar"
+        default: "4000"
+      dias_max:
+        description: "Ate quantos dias atras recuar"
+        default: "180"
+      por_dia:
+        description: "Maximo de mercados por dia de encerramento (cobertura temporal)"
+        default: "40"
       volume_min:
-        description: "Volume minimo em USD para o mercado entrar"
-        default: "5000"
+        description: "Volume minimo em USD"
+        default: "10000"
+      leads:
+        description: "Horas antes do fim (o primeiro e o principal)"
+        default: "6,24"
       limiar:
         description: "Vender SIM em mercados abaixo deste preco"
         default: "0.10"
@@ -34,7 +36,7 @@ permissions:
 jobs:
   rodar:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -44,34 +46,30 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r requirements.txt
 
-      - name: Confirmar que o Actions esta ativo
-        run: echo "Actions ativo neste repositorio."
-
       - name: Validar a maquinaria
         # Antes de tocar em dado real: o pipeline acha vies onde ele existe por
         # construcao, e nao acha onde o mercado e honesto? Sem isso, um "nao
-        # achei vies" no Polymarket seria indistinguivel de codigo que nao acha
-        # vies nenhum.
+        # achei vies" seria indistinguivel de codigo que nao acha vies nenhum.
         run: python -m unittest discover -s tests -v
 
       - name: Sondar a API
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.modo == 'sondar' }}
-        # Roda ANTES de confiar no parser: imprime a estrutura crua que a Gamma
-        # devolve, para conferir nomes de campo em vez de adivinhar.
+        if: ${{ inputs.modo == 'sondar' }}
         run: python -m lab.fetch --sondar
 
       - name: Rodar o estudo
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.modo == 'estudo' }}
+        if: ${{ inputs.modo == 'estudo' }}
         run: |
           python -m lab.study \
-            --max-mercados "${{ inputs.max_mercados }}" \
-            --lead-horas "${{ inputs.lead_horas }}" \
+            --alvo "${{ inputs.alvo }}" \
+            --dias-max "${{ inputs.dias_max }}" \
+            --por-dia "${{ inputs.por_dia }}" \
             --volume-min "${{ inputs.volume_min }}" \
+            --leads "${{ inputs.leads }}" \
             --limiar "${{ inputs.limiar }}" \
             --spread "${{ inputs.spread }}"
 
       - name: Publicar resultados
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.modo == 'estudo' }}
+        if: ${{ inputs.modo == 'estudo' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -80,7 +78,7 @@ jobs:
             echo "Nenhuma mudanca nos resultados."
           else
             # commitar ANTES de rebasear: `git pull --rebase` recusa arvore suja
-            git commit -m "resultados: ${{ inputs.max_mercados }} mercados, lead ${{ inputs.lead_horas }}h, limiar ${{ inputs.limiar }}"
+            git commit -m "resultados: ${{ inputs.alvo }} mercados, ${{ inputs.dias_max }}d, leads ${{ inputs.leads }}"
             git pull --rebase origin "${GITHUB_REF_NAME}"
             git push
           fi
@@ -90,3 +88,4 @@ jobs:
         with:
           name: resultados
           path: resultados/
+          if-no-files-found: ignore
