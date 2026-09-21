@@ -271,7 +271,8 @@ def coletar_periodo(dias_min_fechado=7, dias_max=180, volume_min=10000,
     return list(coletados.values())
 
 
-def precos_nos_leads(token_id, ancora_ts, leads=(6, 24), min_pontos=3):
+def precos_nos_leads(token_id, ancora_ts, leads=(6, 24), min_pontos=3,
+                     max_defasagem_h=48):
     """
     Preco do token a N horas da ANCORA, numa unica busca.
 
@@ -287,7 +288,14 @@ def precos_nos_leads(token_id, ancora_ts, leads=(6, 24), min_pontos=3):
     Preco so e preco depois que alguem negociou. Sem essa exigencia o estudo
     mede o valor padrao da plataforma, nao a opiniao do mercado.
 
-    Devolve {horas: (ts_usado, preco)} apenas para os leads validos.
+    DEFASAGEM. O preco devolvido e o do ultimo negocio ANTES do instante
+    medido, e `defasagem_h` diz quanto tempo antes. Isso importa mais do que
+    parece: um azarao cujo ultimo negocio foi a 0,05 horas antes do fim, e que
+    subiu e ganhou, seria registrado como "custava 0,05 e aconteceu" -- e isso
+    sozinho fabrica a aparencia de azarao barato. Quem chama deve filtrar por
+    defasagem e medir a sensibilidade do resultado a esse filtro.
+
+    Devolve {horas: {"ts", "preco", "defasagem_h"}} para os leads validos.
     """
     hist = historico_preco(token_id)
     out = {}
@@ -300,9 +308,11 @@ def precos_nos_leads(token_id, ancora_ts, leads=(6, 24), min_pontos=3):
         if max(precos_antes) - min(precos_antes) < 1e-9:
             continue          # serie inteira constante: nunca negociou
         t_uso, preco = anteriores[-1]
-        if alvo - t_uso > 48 * 3600 or not (0.0 < preco < 1.0):
+        defasagem_h = (alvo - t_uso) / 3600.0
+        if defasagem_h > max_defasagem_h or not (0.0 < preco < 1.0):
             continue
-        out[horas] = (t_uso, preco)
+        out[horas] = {"ts": int(t_uso), "preco": float(preco),
+                      "defasagem_h": float(defasagem_h)}
     return out
 
 

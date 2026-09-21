@@ -29,6 +29,9 @@ on:
       spread:
         description: "Custo de execucao, em unidades de preco"
         default: "0.01"
+      max_defasagem:
+        description: "Descarta preco cujo ultimo negocio seja mais velho que isto (horas)"
+        default: "6"
 
 permissions:
   contents: write
@@ -66,7 +69,8 @@ jobs:
             --volume-min "${{ inputs.volume_min }}" \
             --leads "${{ inputs.leads }}" \
             --limiar "${{ inputs.limiar }}" \
-            --spread "${{ inputs.spread }}"
+            --spread "${{ inputs.spread }}" \
+            --max-defasagem "${{ inputs.max_defasagem }}"
 
       - name: Publicar resultados
         if: ${{ inputs.modo == 'estudo' }}

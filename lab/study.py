@@ -107,7 +107,8 @@ def coletar(args, leads):
                 k = f"sem preco no lead de {horas}h"
                 descartes[k] = descartes.get(k, 0) + 1
         mercados.append({**lido, "ts_fim": fim,
-                         "precos": {str(h): p for h, (_t, p) in precos.items()}})
+                         "precos": {str(h): d["preco"] for h, d in precos.items()},
+                         "defasagens": {str(h): d["defasagem_h"] for h, d in precos.items()}})
         if (i + 1) % 400 == 0:
             log(f"      {i+1}/{len(brutos)} lidos ({len(mercados)} utilizaveis)")
 
@@ -158,6 +159,8 @@ def main(argv=None):
     ap.add_argument("--spread", type=float, default=0.01)
     ap.add_argument("--frac-is", type=float, default=0.6)
     ap.add_argument("--reps", type=int, default=5000)
+    ap.add_argument("--max-defasagem", type=float, default=6.0,
+                    help="descarta preco cujo ultimo negocio seja mais velho que isto (horas)")
     ap.add_argument("--sem-cache", action="store_true")
     args = ap.parse_args(argv)
 
@@ -179,8 +182,14 @@ def main(argv=None):
 
     resultados, sens = {}, {}
     for horas in leads:
-        sub = [{**m, "preco": m["precos"][str(horas)]}
+        sub = [{**m, "preco": m["precos"][str(horas)],
+                "defasagem_h": m.get("defasagens", {}).get(str(horas), 0.0)}
                for m in mercados if str(horas) in m["precos"]]
+        # Filtro de defasagem: preco velho nao e preco daquele momento.
+        antes = len(sub)
+        sub = [m for m in sub if m["defasagem_h"] <= args.max_defasagem]
+        if antes:
+            log(f"      defasagem <= {args.max_defasagem}h: {len(sub)}/{antes} mercados")
         cob = len(sub) / len(mercados)
         log(f"[3/5] Lead {horas}h: {len(sub)} mercados ({cob:.1%} de cobertura)")
         if len(sub) < 100:
@@ -212,12 +221,36 @@ def main(argv=None):
         log("ERRO: nenhum lead com amostra suficiente.")
         return 1
 
+    # Sensibilidade a defasagem: se o vies encolher conforme o filtro aperta,
+    # ele vinha de preco velho, nao do mercado.
+    log("[3b/5] Sensibilidade a defasagem do preco (lead principal)...")
+    principal = leads[0]
+    base = [{**m, "preco": m["precos"][str(principal)],
+             "defasagem_h": m.get("defasagens", {}).get(str(principal), 0.0)}
+            for m in mercados if str(principal) in m["precos"]]
+    base.sort(key=lambda m: m["ts_fim"])
+    corte_b = int(len(base) * args.frac_is)
+    sens_defasagem = []
+    for tol in (0.5, 1, 2, 6, 12, 24, 48):
+        oos_t = [m for m in base[corte_b:] if m["defasagem_h"] <= tol]
+        if len(oos_t) < 50:
+            sens_defasagem.append({"tolerancia_h": tol, "n_mercados": len(oos_t), "n": 0})
+            continue
+        r = analisar(oos_t, f"tol {tol}h", args.limiar, args.spread, args.reps)
+        v = r["vies_azarao"]
+        sens_defasagem.append({"tolerancia_h": tol, "n_mercados": len(oos_t),
+                               "n": v.get("n", 0), "vies": v.get("vies"),
+                               "p_valor": v.get("p_valor")})
+        log(f"      <= {tol:>4}h: {len(oos_t):>5} mercados, {v.get('n',0):>4} azaroes, "
+            f"vies={v.get('vies', float('nan')):+.4f} p={v.get('p_valor',1):.4f}")
+
     log("[4/5] Relatorio...")
     ctx = {"args": vars(args), "leads": leads, "descartes": descartes,
            "n": len(mercados),
            "periodo": [f"{datetime.fromtimestamp(fins[0], tz=timezone.utc):%Y-%m-%d}",
                        f"{datetime.fromtimestamp(fins[-1], tz=timezone.utc):%Y-%m-%d}"],
            "segundos": round(time.time() - t0, 1)}
+    ctx["sens_defasagem"] = sens_defasagem
     escrever(ctx, resultados, sens)
     with open(os.path.join(SAIDA, "resultado.json"), "w") as f:
         json.dump({"contexto": ctx, "resultados": resultados, "sensibilidade": sens},
@@ -260,7 +293,7 @@ def escrever(ctx, resultados, sens):
                  "deve ser tratado como artefato ate essa concentracao cair.\n")
     if principal in resultados:
         r = resultados[principal]
-        v = r["out_of_sample"]["vies"]
+        v = r["out_of_sample"]["vies_azarao"]
         L.append(f"Lead principal: **{principal}h antes do fim** "
                  f"(cobertura {r['cobertura']:.1%} dos mercados).\n")
         L.append(_veredito(v) + "\n")
@@ -350,6 +383,27 @@ def escrever(ctx, resultados, sens):
         L.append("")
         L.append("Um vies pode ser real e mesmo assim nao ser operavel: num mercado "
                  "de 5 centavos, 1 centavo de spread leva um quinto do premio.\n")
+
+    sd = ctx.get("sens_defasagem") or []
+    if sd:
+        L.append("\n---\n\n## Sensibilidade a defasagem do preco\n")
+        L.append("| Defasagem maxima | Mercados | Azaroes | Vies | p-valor |")
+        L.append("|---|---|---|---|---|")
+        for r in sd:
+            if not r.get("n"):
+                L.append(f"| ≤ {r['tolerancia_h']}h | {r['n_mercados']} | — | — | — |")
+                continue
+            L.append(f"| ≤ {r['tolerancia_h']}h | {r['n_mercados']} | {r['n']} | "
+                     f"{r['vies']:+.4f} | {r['p_valor']:.4f} |")
+        L.append("")
+        L.append("**Esta e a tabela que decide se o achado e real.** O preco lido e "
+                 "o do ultimo negocio ANTES do instante medido. Se esse negocio "
+                 "aconteceu horas antes, o preco esta velho -- e um azarao que "
+                 "negociou a 0,05, subiu e ganhou entraria como 'custava 0,05 e "
+                 "aconteceu', fabricando sozinho a aparencia de azarao barato.\n")
+        L.append("Se o vies encolher em direcao a zero conforme a tolerancia "
+                 "aperta, ele vinha de preco velho. Se ficar estavel, e do "
+                 "mercado.\n")
 
     L.append("\n---\n\n## Descartes na coleta\n")
     L.append("| Motivo | Mercados |")
