@@ -56,6 +56,47 @@ uma resposta real da Gamma, entao:
 - Existe o modo `python -m lab.fetch --sondar`, que imprime a estrutura crua.
   **Rode isso antes de confiar em qualquer resultado.**
 
+## O que a API do Polymarket realmente faz (medido, nao suposto)
+
+Cinco sondas e uma rodada inteira perdida foram gastas descobrindo isto. Nao
+refaca o caminho:
+
+- **Ordem padrao devolve os mercados de 2020**, cujos `outcomePrices` vem
+  `["0","0"]` -- sem desfecho legivel. Use `order=endDate&ascending=false`.
+- **Ordenado por endDate, os primeiros milhares tem fim em 2028-2029**
+  (apostas de horizonte longo). Paginar por offset NUNCA alcanca o passado;
+  e preciso mover `end_date_max`.
+- **Filtros aceitos:** `end_date_max`, `volume_num_min`, `start_date_min`.
+  **Ignorados em silencio:** `endDateMax`, `end_date_min`, `volumeNumMin`,
+  `volume_min`. **Derruba a API (500):** `liquidity_num_min`. Filtro ignorado
+  nao da erro -- devolve o lote de sempre, o que e pior do que falhar.
+- **`end_date_max` responde 500 para janelas com mais de ~30 dias.** O
+  historico alcancavel por esta rota e de poucas semanas, nao meses. Nao
+  insista: 5xx aqui e deterministico, e retentativa so gasta tempo (37 de 62
+  minutos numa rodada).
+- **`endDate` e o horario PREVISTO; `closedTime` e o real**, e os dois podem
+  diferir em horas. Ancore em `closedTime`.
+- **Historico de preco:** 1h e 6h existem em 100% dos mercados, 24h em ~50%,
+  72h em ~8%. Lead de 24h restringe a amostra aos mercados de vida longa.
+
+## Dois erros de desenho que ja custaram uma rodada
+
+1. **Preco de mercado que nunca negociou.** Ancorado em `endDate`, o lead de
+   6h caia antes da primeira negociacao e devolvia o valor inicial de 0,50:
+   dois tercos da amostra colados em 0,50, produzindo "vies" com p=0,025 e
+   direcao invertida, inteiramente artefato. Hoje `precos_nos_leads` exige
+   pontos de historico anteriores e serie nao-constante, e o relatorio avisa
+   sozinho se mais de 25% dos precos estiverem perto de 0,50.
+2. **Olhar so o lado SIM.** O azarao de um mercado esportivo quase nunca e o
+   token SIM -- se o SIM custa 0,85, o azarao e o NAO a 0,15. Olhando um lado
+   so, as faixas baratas ficavam vazias e o backtest teve DEZ apostas. Hoje
+   cada mercado entra com os dois lados (`analise.observacoes`).
+
+Consequencia do item 2 que precisa ficar clara: somando os dois lados, o vies
+AGREGADO e zero por construcao. O que se mede e o vies DENTRO das faixas
+baratas (`teste_vies_azarao`). Isso nao e perda -- vies favorito-azarao
+sempre foi afirmacao sobre as pontas, nunca sobre a media geral.
+
 ## A validacao sintetica e obrigatoria
 
 `tests/test_sintetico.py` prova que o pipeline acha vies no mundo enviesado

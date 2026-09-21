@@ -37,7 +37,8 @@ from datetime import datetime, timezone
 import numpy as np
 
 from lab import fetch
-from lab.analise import agregar, backtest_vender_azarao, tabela_calibracao, teste_vies
+from lab.analise import (agregar, backtest_vender_azarao, observacoes,
+                         tabela_calibracao, teste_vies_azarao)
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SAIDA = os.path.join(RAIZ, "resultados")
@@ -48,8 +49,14 @@ def log(m):
 
 
 def _ts(iso):
+    """Aceita '2026-09-14T12:00:00Z' e '2026-09-14 13:10:48+00' (closedTime)."""
+    if not iso:
+        return None
+    txt = str(iso).strip().replace("Z", "+00:00")
+    if txt.endswith("+00"):
+        txt += ":00"
     try:
-        return int(datetime.fromisoformat(str(iso).replace("Z", "+00:00")).timestamp())
+        return int(datetime.fromisoformat(txt).timestamp())
     except (ValueError, TypeError):
         return None
 
@@ -81,7 +88,8 @@ def coletar(args, leads):
         if lido is None:
             descartes[motivo] = descartes.get(motivo, 0) + 1
             continue
-        fim = _ts(lido["fim"])
+        # Ancora no fechamento REAL quando existe; endDate e so o previsto.
+        fim = _ts(lido.get("fechado_em")) or _ts(lido["fim"])
         if fim is None:
             descartes["data ilegivel"] = descartes.get("data ilegivel", 0) + 1
             continue
@@ -109,15 +117,32 @@ def coletar(args, leads):
     return mercados, descartes
 
 
+def fracao_no_inicial(p, centro=0.5, tol=0.02):
+    """
+    Fracao dos precos colada no valor inicial da plataforma.
+
+    Guarda automatica contra o erro que invalidou a primeira rodada: se muita
+    massa estiver em ~0,50, o estudo esta lendo o preco padrao de mercados que
+    nunca negociaram, e nao opiniao de mercado. O relatorio avisa sozinho em
+    vez de depender de alguem reparar na tabela.
+    """
+    if len(p) == 0:
+        return 0.0
+    return float(np.mean(np.abs(np.asarray(p, dtype=float) - centro) <= tol))
+
+
 def analisar(mercados, rotulo, limiar, spread, reps):
-    p = np.array([m["preco"] for m in mercados], dtype=float)
-    y = np.array([m["desfecho_sim"] for m in mercados], dtype=float)
-    ts = np.array([m["ts_fim"] for m in mercados], dtype=float)
-    trades = backtest_vender_azarao(p, y, ts, limiar=limiar, spread=spread)
+    p_sim = np.array([m["preco"] for m in mercados], dtype=float)
+    y_sim = np.array([m["desfecho_sim"] for m in mercados], dtype=float)
+    ts_m = np.array([m["ts_fim"] for m in mercados], dtype=float)
+    # Os dois lados de cada mercado: o azarao costuma ser o lado NAO.
+    P, Y, T, _ids = observacoes(p_sim, y_sim, ts_m)
+    trades = backtest_vender_azarao(P, Y, T, limiar=limiar, spread=spread)
     blocos = [semana(t["ts"]) for t in trades]
-    return {"rotulo": rotulo, "n_mercados": len(p),
-            "calibracao": tabela_calibracao(p, y),
-            "vies": teste_vies(p, y, reps=reps),
+    return {"rotulo": rotulo, "n_mercados": len(p_sim), "n_obs": int(len(P)),
+            "fracao_no_inicial": fracao_no_inicial(p_sim),
+            "calibracao": tabela_calibracao(P, Y),
+            "vies_azarao": teste_vies_azarao(P, Y, limiar=limiar, reps=reps),
             "backtest": agregar(trades, blocos)}
 
 
@@ -169,8 +194,9 @@ def main(argv=None):
             "in_sample": analisar(sub[:corte], "in-sample", args.limiar, args.spread, args.reps),
             "out_of_sample": analisar(sub[corte:], "out-of-sample", args.limiar, args.spread, args.reps),
         }
-        v = resultados[horas]["out_of_sample"]["vies"]
-        log(f"      OOS vies={v.get('vies', float('nan')):+.4f} p={v.get('p_valor', 1):.4f}")
+        v = resultados[horas]["out_of_sample"]["vies_azarao"]
+        log(f"      OOS azaroes n={v.get('n', 0)} vies={v.get('vies', float('nan')):+.4f} "
+            f"p={v.get('p_valor', 1):.4f}")
 
         oos = sub[corte:]
         p = np.array([m["preco"] for m in oos], dtype=float)
@@ -223,7 +249,15 @@ def escrever(ctx, resultados, sens):
              f"{ctx['n']} mercados resolvidos · encerrados entre "
              f"{ctx['periodo'][0]} e {ctx['periodo'][1]} · {ctx['segundos']}s\n")
 
+    suspeito = max((resultados[h]["tudo"].get("fracao_no_inicial", 0.0)
+                    for h in resultados), default=0.0)
     L.append("## Leitura rapida\n")
+    if suspeito > 0.25:
+        L.append(f"> **AVISO: {suspeito:.0%} dos precos estao a menos de 2 centavos "
+                 "de 0,50.** Isso costuma significar que o preco lido e o valor "
+                 "inicial da plataforma, de mercados que ainda nao tinham "
+                 "negociado -- e nao opiniao de mercado. Qualquer numero abaixo "
+                 "deve ser tratado como artefato ate essa concentracao cair.\n")
     if principal in resultados:
         r = resultados[principal]
         v = r["out_of_sample"]["vies"]
@@ -231,8 +265,11 @@ def escrever(ctx, resultados, sens):
                  f"(cobertura {r['cobertura']:.1%} dos mercados).\n")
         L.append(_veredito(v) + "\n")
         if v.get("n", 0):
-            L.append(f"- Vies medio (preco − desfecho), out-of-sample: "
-                     f"**{v['vies']:+.4f}** em {v['n']} mercados, p = {v['p_valor']:.4f}\n")
+            L.append(f"- Entre as apostas precificadas até {a['limiar']:.0%}: preço médio "
+                     f"**{v['preco_medio']:.3f}**, aconteceu de fato "
+                     f"**{v['freq_real']:.3f}** das vezes.\n")
+            L.append(f"- Vies (preco − frequencia real): **{v['vies']:+.4f}** em "
+                     f"{v['n']} apostas de azarao, p = {v['p_valor']:.4f}\n")
             L.append(f"- Faixa que a nula produziria: "
                      f"[{v['nula_ic'][0]:+.4f}, {v['nula_ic'][1]:+.4f}]\n")
         b = r["out_of_sample"]["backtest"]
@@ -242,8 +279,14 @@ def escrever(ctx, resultados, sens):
                      f"IC 95% [{b['ic_r'][0]:+.3f}, {b['ic_r'][1]:+.3f}]\n")
 
     L.append("\n## Como ler\n")
-    L.append("- **Vies** = preco medio menos frequencia real. Positivo significa que "
-             "o mercado cobra mais do que o evento vale.\n")
+    L.append("- **Vies** = preco medio menos frequencia real, medido SO entre as "
+             "apostas baratas. Positivo significa azarao caro demais.\n")
+    L.append("- Cada mercado entra com os **dois lados**: se o SIM custa 0,85, o "
+             "NAO custa 0,15 e é o azarao daquele mercado. Olhar so o lado SIM "
+             "esvaziaria as faixas baratas.\n")
+    L.append("- Por isso o vies AGREGADO nao aparece: somando os dois lados ele e "
+             "zero por construcao. Vies favorito-azarao sempre foi uma afirmacao "
+             "sobre as pontas, nunca sobre a media geral.\n")
     L.append("- A **nula** nao e zero: e o que a sorte produziria se cada mercado "
              "fosse uma moeda honesta com a probabilidade que ele mesmo anuncia.\n")
     L.append("- **R** = valor arriscado. Vender SIM a p arrisca (1−p) para ganhar p.\n")
@@ -262,19 +305,21 @@ def escrever(ctx, resultados, sens):
         marca = " (principal)" if horas == principal else " (secundario)"
         L.append(f"\n---\n\n# Lead de {horas}h{marca}\n")
         L.append(f"Cobertura: {r['cobertura']:.1%} dos mercados coletados.\n")
-        vo = r["out_of_sample"]["vies"]
+        vo = r["out_of_sample"]["vies_azarao"]
         L.append(f"\n{_veredito(vo)}\n")
 
-        L.append("\n| Recorte | Mercados | Vies | p-valor | Backtest (n) | Expectancia | IC 95% |")
-        L.append("|---|---|---|---|---|---|---|")
+        L.append(f"\n| Recorte | Mercados | Azaroes (≤{a['limiar']:.0%}) | Vies no azarao | "
+                 "p-valor | Backtest (n) | Expectancia | IC 95% |")
+        L.append("|---|---|---|---|---|---|---|---|")
         for chave, nome in (("in_sample", "In-sample"), ("out_of_sample", "Out-of-sample")):
             d = r[chave]
-            v, b = d["vies"], d["backtest"]
+            v, b = d["vies_azarao"], d["backtest"]
             if b.get("n", 0):
                 bt = f"{b['n']} | {b['exp_r']:+.4f}R | [{b['ic_r'][0]:+.3f}, {b['ic_r'][1]:+.3f}]"
             else:
                 bt = "0 | — | —"
-            L.append(f"| {nome} | {d['n_mercados']} | {v.get('vies', float('nan')):+.4f} | "
+            L.append(f"| {nome} | {d['n_mercados']} | {v.get('n', 0)} | "
+                     f"{v.get('vies', float('nan')):+.4f} | "
                      f"{v.get('p_valor', 1):.4f} | {bt} |")
         L.append("")
 

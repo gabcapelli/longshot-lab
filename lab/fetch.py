@@ -28,12 +28,25 @@ CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 
 
 def _get(url, tentativas=4, timeout=30):
+    """
+    Nao reexecuta erro 5xx: a Gamma devolve 500 de forma deterministica para
+    janelas de data antigas, e insistir so gasta tempo. Na primeira rodada
+    sobre dado real, 37 dos 62 minutos foram gastos repetindo ~150 janelas que
+    nunca iam responder. Erro de rede continua com retentativa, porque esse
+    sim costuma ser transitorio.
+    """
     espera, ultimo = 1.0, None
     for _ in range(tentativas):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "longshot-lab"})
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            if 500 <= e.code < 600:
+                raise RuntimeError(f"HTTP {e.code} (sem retentativa): {url}") from e
+            ultimo = e
+            time.sleep(espera)
+            espera *= 2
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
             ultimo = e
             time.sleep(espera)
@@ -121,6 +134,10 @@ def interpretar(m):
 
     return {
         "id": str(_campo(m, "id", "conditionId") or ""),
+        # closedTime e o fechamento REAL; endDate e o horario previsto e pode
+        # estar horas adiante (sonda viu endDate 16:30 com closedTime 13:10).
+        # Ancorar no previsto joga a medida para antes de existir negociacao.
+        "fechado_em": _campo(m, "closedTime"),
         "pergunta": _campo(m, "question", "title") or "",
         "slug": _campo(m, "slug") or "",
         "nomes": [str(x) for x in nomes],
@@ -211,10 +228,14 @@ def coletar_periodo(dias_min_fechado=7, dias_max=180, volume_min=10000,
     """
     from datetime import datetime, timedelta, timezone as _tz
     agora = datetime.now(_tz.utc)
-    coletados, dia = {}, 0
+    coletados, dia, falhas_seguidas = {}, 0, 0
     total_dias = max(dias_max - dias_min_fechado, 1)
+    # A Gamma responde 500 para janelas muito antigas. Depois de algumas
+    # seguidas, nao ha mais historico alcancavel: parar em vez de varrer meses
+    # de janelas mortas.
+    MAX_FALHAS = 8
 
-    while len(coletados) < alvo and dia < total_dias:
+    while len(coletados) < alvo and dia < total_dias and falhas_seguidas < MAX_FALHAS:
         teto = agora - timedelta(days=dias_min_fechado + dia)
         params = {"order": "endDate", "ascending": "false",
                   "end_date_max": _iso(teto), "volume_num_min": volume_min}
@@ -225,9 +246,12 @@ def coletar_periodo(dias_min_fechado=7, dias_max=180, volume_min=10000,
             try:
                 lote = _buscar_lote(limit=100, offset=offset, **params)
             except RuntimeError as e:
-                if verboso:
-                    print(f"      janela {teto:%Y-%m-%d} falhou ({e}); segue")
+                falhas_seguidas += 1
+                if verboso and falhas_seguidas <= 3:
+                    print(f"      janela {teto:%Y-%m-%d} falhou ({e})")
                 break
+            else:
+                falhas_seguidas = 0
             if not lote:
                 break
             for m in lote:
@@ -239,29 +263,42 @@ def coletar_periodo(dias_min_fechado=7, dias_max=180, volume_min=10000,
                     do_dia += 1
             time.sleep(pausa)
         dia += 1
-        if verboso and dia % 20 == 0:
+        if verboso and dia % 10 == 0:
             print(f"      {len(coletados)} mercados; recuou ate {teto:%Y-%m-%d}")
+    if verboso and falhas_seguidas >= MAX_FALHAS:
+        print(f"      parou: a API nao devolve janelas anteriores a "
+              f"{teto:%Y-%m-%d} (limite do historico alcancavel)")
     return list(coletados.values())
 
 
-def precos_nos_leads(token_id, fim_ts, leads=(6, 24)):
+def precos_nos_leads(token_id, ancora_ts, leads=(6, 24), min_pontos=3):
     """
-    Preco do token a N horas do fim, para varios N, numa unica busca.
+    Preco do token a N horas da ANCORA, numa unica busca.
 
-    Cobertura medida por sonda em 2026-09-21: 1h e 6h em 100% dos mercados,
-    24h em 50%, 72h em 8%. O lead de 24h so existe em mercado de vida longa,
-    entao usa-lo sozinho enviesaria a amostra -- por isso o estudo mede mais
-    de um lead e reporta a cobertura de cada um.
+    `min_pontos` exige que existam pelo menos N pontos de historico ANTES do
+    instante medido, e que eles nao sejam todos identicos.
 
-    Devolve {horas: (ts_usado, preco)} apenas para os leads disponiveis.
+    Por que isso e obrigatorio: na primeira rodada sobre dado real, dois
+    tercos dos mercados devolveram preco ~0,50 no lead de 6h. Nao era o
+    mercado precificando meio a meio -- era o valor inicial de um mercado que
+    ainda nao tinha negociado, lido como se fosse preco. O resultado saiu com
+    p=0,025 e direcao invertida, inteiramente artefato.
+
+    Preco so e preco depois que alguem negociou. Sem essa exigencia o estudo
+    mede o valor padrao da plataforma, nao a opiniao do mercado.
+
+    Devolve {horas: (ts_usado, preco)} apenas para os leads validos.
     """
     hist = historico_preco(token_id)
     out = {}
     for horas in leads:
-        alvo = fim_ts - horas * 3600
+        alvo = ancora_ts - horas * 3600
         anteriores = [(t, p) for t, p in hist if t <= alvo]
-        if not anteriores:
+        if len(anteriores) < min_pontos:
             continue
+        precos_antes = [p for _t, p in anteriores]
+        if max(precos_antes) - min(precos_antes) < 1e-9:
+            continue          # serie inteira constante: nunca negociou
         t_uso, preco = anteriores[-1]
         if alvo - t_uso > 48 * 3600 or not (0.0 < preco < 1.0):
             continue

@@ -125,3 +125,39 @@ class TestContabilidade(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestDoisLados(unittest.TestCase):
+    """Os dois lados de cada mercado, e por que o vies agregado morre com eles."""
+
+    def setUp(self):
+        from lab.analise import observacoes
+        self.obs = observacoes(np.array([0.85, 0.30, 0.05]),
+                               np.array([1.0, 0.0, 0.0]),
+                               np.array([1, 2, 3]))
+
+    def test_dobra_a_amostra(self):
+        P, Y, T, I = self.obs
+        self.assertEqual(len(P), 6)
+        self.assertEqual(len(np.unique(I)), 3, "ids de mercado nao pareados")
+
+    def test_lado_nao_e_o_complemento(self):
+        P, Y, _T, _I = self.obs
+        self.assertAlmostEqual(P[0] + P[3], 1.0, places=12)
+        self.assertAlmostEqual(Y[0] + Y[3], 1.0, places=12)
+
+    def test_vies_agregado_e_zero_por_construcao(self):
+        """Se este teste falhar, a contabilidade dos dois lados esta errada --
+        e o relatorio nao pode reportar vies agregado."""
+        P, Y, _T, _I = self.obs
+        self.assertAlmostEqual(float(np.mean(P - Y)), 0.0, places=12)
+
+    def test_azarao_aparece_no_lado_certo(self):
+        """Mercado com SIM a 0,85 tem azarao no NAO, a 0,15 -- e e ele que a
+        regra deve pegar."""
+        from lab.analise import backtest_vender_azarao
+        P, Y, T, _I = self.obs
+        tr = backtest_vender_azarao(P, Y, T, limiar=0.20, spread=0.0)
+        precos = sorted(round(t["preco"], 2) for t in tr)
+        self.assertEqual(precos, [0.05, 0.15],
+                         f"regra pegou os precos errados: {precos}")

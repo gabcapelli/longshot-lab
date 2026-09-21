@@ -34,6 +34,54 @@ BUCKETS = [(0.00, 0.02), (0.02, 0.05), (0.05, 0.10), (0.10, 0.20),
            (0.80, 0.90), (0.90, 0.95), (0.95, 0.98), (0.98, 1.00)]
 
 
+def observacoes(precos_sim, desfechos_sim, ts):
+    """
+    Cada mercado binario vira DUAS observacoes: o lado SIM a p, e o lado NAO a
+    (1-p). Se o SIM custa 0,85, o NAO custa 0,15 -- e um azarao.
+
+    Por que isso e obrigatorio: olhando so o lado SIM, as faixas baratas ficam
+    quase vazias. Na primeira rodada sobre dado real o backtest teve DEZ
+    apostas, porque quase nenhum token SIM de mercado esportivo esta abaixo de
+    10 centavos -- o azarao daquele mercado e o outro lado, que eu estava
+    jogando fora.
+
+    Atencao ao usar: a media de (preco - desfecho) sobre os dois lados e ZERO
+    por construcao, ja que (p - y) + ((1-p) - (1-y)) = 0. O vies agregado
+    perde sentido aqui; o que se mede e o vies DENTRO das faixas de preco
+    (ver teste_vies_azarao). Isso nao e perda: vies favorito-azarao sempre foi
+    uma afirmacao sobre as pontas, nunca sobre a media geral.
+    """
+    p = np.asarray(precos_sim, dtype=float)
+    y = np.asarray(desfechos_sim, dtype=float)
+    t = np.asarray(ts, dtype=float)
+    precos = np.concatenate([p, 1.0 - p])
+    desfechos = np.concatenate([y, 1.0 - y])
+    tempos = np.concatenate([t, t])
+    # id do mercado, para o bootstrap saber que os dois lados sao o mesmo evento
+    ids = np.concatenate([np.arange(len(p)), np.arange(len(p))])
+    return precos, desfechos, tempos, ids
+
+
+def teste_vies_azarao(p, y, limiar=0.10, reps=5000):
+    """
+    O teste de verdade: entre as observacoes precificadas ABAIXO do limiar, a
+    frequencia real fica abaixo do preco?
+
+    Restringir ao azarao e o que torna a pergunta a do vies favorito-azarao,
+    em vez de uma afirmacao sobre o mercado inteiro.
+    """
+    p = np.asarray(p, dtype=float)
+    y = np.asarray(y, dtype=float)
+    m = (p > 0) & (p <= limiar)
+    if m.sum() == 0:
+        return {"n": 0, "limiar": limiar}
+    r = teste_vies(p[m], y[m], reps=reps)
+    r["limiar"] = limiar
+    r["preco_medio"] = float(p[m].mean())
+    r["freq_real"] = float(y[m].mean())
+    return r
+
+
 def tabela_calibracao(p, y):
     """
     Para cada faixa de preco: quantos mercados, preco medio, frequencia real
