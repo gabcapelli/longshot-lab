@@ -1,6 +1,10 @@
 name: estudo
 
 on:
+  # O push serve so para o GitHub indexar o workflow; nao roda o estudo.
+  push:
+    paths:
+      - ".github/workflows/estudo.yml"
   workflow_dispatch:
     inputs:
       modo:
@@ -40,6 +44,9 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r requirements.txt
 
+      - name: Confirmar que o Actions esta ativo
+        run: echo "Actions ativo neste repositorio."
+
       - name: Validar a maquinaria
         # Antes de tocar em dado real: o pipeline acha vies onde ele existe por
         # construcao, e nao acha onde o mercado e honesto? Sem isso, um "nao
@@ -48,13 +55,13 @@ jobs:
         run: python -m unittest discover -s tests -v
 
       - name: Sondar a API
-        if: ${{ inputs.modo == 'sondar' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.modo == 'sondar' }}
         # Roda ANTES de confiar no parser: imprime a estrutura crua que a Gamma
         # devolve, para conferir nomes de campo em vez de adivinhar.
         run: python -m lab.fetch --sondar
 
       - name: Rodar o estudo
-        if: ${{ inputs.modo == 'estudo' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.modo == 'estudo' }}
         run: |
           python -m lab.study \
             --max-mercados "${{ inputs.max_mercados }}" \
@@ -64,7 +71,7 @@ jobs:
             --spread "${{ inputs.spread }}"
 
       - name: Publicar resultados
-        if: ${{ inputs.modo == 'estudo' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.modo == 'estudo' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
