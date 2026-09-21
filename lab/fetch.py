@@ -155,94 +155,110 @@ def _buscar_lote(limit=100, offset=0, **extra):
     return r or []
 
 
-def sondar(n_amostra=80, dias_atras=120):
+def _resumo_lote(lote):
+    fins = sorted(str(m.get("endDate") or "") for m in lote if m.get("endDate"))
+    vols = [v for v in (_campo(m, "volumeNum", "volume") for m in lote) if v is not None]
+    vols = sorted(float(v) for v in vols)
+    return {
+        "n": len(lote),
+        "fim_min": fins[0][:10] if fins else "?",
+        "fim_max": fins[-1][:10] if fins else "?",
+        "vol_min": vols[0] if vols else None,
+        "vol_mediana": vols[len(vols) // 2] if vols else None,
+    }
+
+
+def _testar_filtros():
     """
-    A pergunta que decide se o estudo e viavel: em quantos mercados eu
-    consigo o preco de 24h ANTES do fim?
+    Descobre quais parametros de consulta a Gamma REALMENTE aceita.
 
-    A sonda anterior mostrou 100% de outcomePrices em formato 1/0 -- mas
-    numa amostra so de mercados criados no mesmo dia (ordenar por id
-    decrescente pega os recem-criados, que sao mercados de esports que duram
-    horas). Um deles voltou com UM ponto de historico. Se isso valer em
-    geral, o desenho cai, porque nao existe "preco de 24h antes".
-
-    Esta versao vai atras de mercados que fecharam ha mais tempo e mede a
-    distribuicao de historico disponivel, em vez de olhar um exemplo.
+    As duas sondas anteriores perderam tempo com nomes de filtro adivinhados
+    que a API ignorou em silencio -- e filtro ignorado nao da erro, so devolve
+    o mesmo resultado de sempre, o que e pior do que falhar. Aqui cada
+    candidato e comparado contra a consulta sem filtro: se o resumo do lote
+    nao mudar, o filtro nao existe.
     """
     from datetime import datetime, timedelta, timezone as _tz
-    limite = (datetime.now(_tz.utc) - timedelta(days=dias_atras)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    corte = (datetime.now(_tz.utc) - timedelta(days=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    base_params = {"order": "endDate", "ascending": "false"}
+    try:
+        base = _resumo_lote(_buscar_lote(limit=100, **base_params))
+    except RuntimeError as e:
+        print(f"consulta base falhou: {e}")
+        return {}
+    print(f"BASE (sem filtro): {base}\n")
 
-    # Tenta filtrar por data de fim; se a API ignorar o filtro, cai para
-    # paginacao profunda ordenada por endDate.
-    tentativas = [
-        {"order": "endDate", "ascending": "false", "end_date_max": limite},
-        {"order": "endDate", "ascending": "false", "endDateMax": limite},
-        {"order": "endDate", "ascending": "false"},
-    ]
-    lote, usado = [], None
-    for params in tentativas:
+    candidatos = {
+        "volume_num_min": 20000, "volumeNumMin": 20000, "volume_min": 20000,
+        "liquidity_num_min": 5000,
+        "end_date_max": corte, "endDateMax": corte, "end_date_min": corte,
+        "start_date_min": corte,
+    }
+    aceitos = {}
+    for nome, valor in candidatos.items():
         try:
-            r = _buscar_lote(limit=100, **params)
+            r = _resumo_lote(_buscar_lote(limit=100, **base_params, **{nome: valor}))
         except RuntimeError as e:
-            print(f"  variante {list(params)} falhou: {e}")
+            print(f"  {nome:<20} ERRO {e}")
             continue
-        if not r:
-            continue
-        fim0 = str(r[0].get("endDate", ""))
-        print(f"  variante {list(params)}: primeiro endDate={fim0}")
-        lote, usado = r, params
-        if fim0 and fim0 < limite:   # o filtro pegou
-            break
-    if not lote:
-        print("NENHUMA variante devolveu mercados")
-        return
-    print(f"\nusando: {usado}")
+        mudou = (r["fim_max"] != base["fim_max"] or r["fim_min"] != base["fim_min"]
+                 or r["vol_mediana"] != base["vol_mediana"] or r["n"] != base["n"])
+        print(f"  {nome:<20} {'ACEITO' if mudou else 'ignorado'}  {r}")
+        if mudou:
+            aceitos[nome] = valor
+    return aceitos
 
-    # Junta uma amostra, pulando adiante se os primeiros forem recentes demais
+
+def sondar(n_amostra=60, dias_atras=7):
+    """
+    Duas perguntas, nesta ordem:
+      1. Quais filtros a API aceita? (sem isso nao se alcanca mercado nenhum
+         fora dos ultimos dias -- o Polymarket cria milhares de mercados
+         curtos de esporte e a paginacao afoga)
+      2. Em que fracao dos mercados existe preco a X horas do fim? E disso
+         que depende o desenho do estudo.
+    """
+    from datetime import datetime as _dt, timedelta, timezone as _tz
+    print("=" * 70)
+    print("QUAIS FILTROS A API ACEITA")
+    aceitos = _testar_filtros()
+    print(f"\nfiltros aceitos: {aceitos or 'NENHUM'}")
+
+    limite = (_dt.now(_tz.utc) - timedelta(days=dias_atras)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    params = {"order": "endDate", "ascending": "false"}
+    params.update({k: v for k, v in aceitos.items() if "volume" in k or "liquidity" in k})
+
+    print("\n" + "=" * 70)
+    print(f"AMOSTRA: mercados encerrados ha mais de {dias_atras} dias")
     amostra, offset = [], 0
-    while len(amostra) < n_amostra and offset < 3000:
+    while len(amostra) < n_amostra and offset < 4000:
         try:
-            r = _buscar_lote(limit=100, offset=offset, **usado)
+            lote = _buscar_lote(limit=100, offset=offset, **params)
         except RuntimeError:
             break
-        if not r:
+        if not lote:
             break
-        for m in r:
-            fim = str(m.get("endDate", ""))
-            if fim and fim < limite:
+        for m in lote:
+            if str(m.get("endDate") or "") < limite:
                 amostra.append(m)
         offset += 100
-        time.sleep(0.1)
-    print(f"amostra de {len(amostra)} mercados encerrados ha mais de {dias_atras} dias\n")
+        time.sleep(0.08)
+    print(f"  {len(amostra)} mercados (varridos {offset})")
     if not amostra:
-        print("Nenhum mercado antigo encontrado -- a paginacao nao alcanca.")
+        print("  nenhum -- a paginacao ainda nao alcanca")
         return
 
-    print("=" * 70)
-    print("FORMATOS DE outcomePrices")
     tally = {}
     for m in amostra:
         pad = _padrao_precos(_talvez_json(_campo(m, "outcomePrices")))
         tally[pad] = tally.get(pad, 0) + 1
-    for pad, c in sorted(tally.items(), key=lambda kv: -kv[1]):
-        print(f"  {c:>4} ({c/len(amostra):5.1%})  {pad}")
+    print("  formatos de outcomePrices:", tally)
 
     print("\n" + "=" * 70)
-    print("STATUS DE RESOLUCAO E VOLUME")
-    uma, sem_vol = {}, 0
-    for m in amostra:
-        st = str(m.get("umaResolutionStatuses"))
-        uma[st] = uma.get(st, 0) + 1
-        if _campo(m, "volumeNum", "volume") is None:
-            sem_vol += 1
-    for st, c in sorted(uma.items(), key=lambda kv: -kv[1])[:6]:
-        print(f"  {c:>4}  umaResolutionStatuses={st}")
-    print(f"  sem volume legivel: {sem_vol}/{len(amostra)}")
-
-    print("\n" + "=" * 70)
-    print("HISTORICO DE PRECO -- A PERGUNTA QUE DECIDE O ESTUDO")
-    pontos, com_24h, spans, erros = [], 0, [], 0
-    from datetime import datetime as _dt
+    print("COBERTURA DE HISTORICO -- A PERGUNTA QUE DECIDE O DESENHO")
+    leads = (1, 6, 24, 72)
+    cobertura = {h: 0 for h in leads}
+    pontos, testados, erros = [], 0, 0
     for m in amostra[:n_amostra]:
         toks = _talvez_json(_campo(m, "clobTokenIds"))
         fim_iso = _campo(m, "endDate")
@@ -257,29 +273,30 @@ def sondar(n_amostra=80, dias_atras=120):
         except RuntimeError:
             erros += 1
             continue
+        testados += 1
         pontos.append(len(h))
-        if h:
-            spans.append((h[-1][0] - h[0][0]) / 86400.0)
-            if any(t <= fim_ts - 24 * 3600 for t, _ in h):
-                com_24h += 1
-        time.sleep(0.12)
-    n = len(pontos)
-    if n:
-        pontos_ord = sorted(pontos)
-        print(f"  mercados testados: {n} (erros de busca: {erros})")
-        print(f"  pontos de historico -- min={pontos_ord[0]} "
-              f"mediana={pontos_ord[n//2]} max={pontos_ord[-1]}")
-        print(f"  com 1 ponto ou menos: {sum(1 for x in pontos if x <= 1)}")
-        if spans:
-            sp = sorted(spans)
-            print(f"  janela coberta (dias) -- mediana={sp[len(sp)//2]:.1f} max={sp[-1]:.1f}")
-        print(f"  >>> COM PRECO A 24h DO FIM: {com_24h}/{n} ({com_24h/n:.1%})")
-        print()
-        if com_24h / n < 0.5:
-            print("  VEREDITO: o desenho de 'preco a 24h do fim' NAO se sustenta")
-            print("            nesta base. Seria preciso mudar o ponto de medida.")
-        else:
-            print("  VEREDITO: o desenho se sustenta.")
+        for horas in leads:
+            if any(t <= fim_ts - horas * 3600 for t, _ in h):
+                cobertura[horas] += 1
+        time.sleep(0.1)
+
+    if not testados:
+        print("  nenhum mercado testavel")
+        return
+    po = sorted(pontos)
+    print(f"  testados: {testados} (erros: {erros})")
+    print(f"  pontos de historico: min={po[0]} mediana={po[len(po)//2]} max={po[-1]}")
+    print(f"  com <=1 ponto: {sum(1 for x in pontos if x <= 1)}/{testados}")
+    print("\n  fracao com preco disponivel a N horas do fim:")
+    for horas in leads:
+        c = cobertura[horas]
+        print(f"    {horas:>3}h antes: {c:>3}/{testados} ({c/testados:5.1%})")
+    melhor = max(leads, key=lambda h: (cobertura[h] / testados, -h))
+    print(f"\n  VEREDITO: maior cobertura util em {melhor}h "
+          f"({cobertura[melhor]/testados:.1%}).")
+    if cobertura[24] / testados < 0.5:
+        print("  O lead de 24h do desenho atual NAO se sustenta; usar lead menor")
+        print("  ou mudar o ponto de medida.")
 
 
 if __name__ == "__main__":
