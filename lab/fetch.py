@@ -131,29 +131,113 @@ def interpretar(m):
     }, None
 
 
-def sondar(n=3):
-    """Imprime a estrutura crua de alguns mercados fechados, para conferir o parser."""
-    brutos = gamma_markets(limit=n)
-    if isinstance(brutos, dict):
-        print("RESPOSTA E DICT; chaves:", list(brutos)[:20])
-        brutos = brutos.get("data", brutos.get("markets", []))
-    print(f"recebidos {len(brutos)} mercados\n")
-    for m in brutos[:n]:
-        print("=" * 70)
-        print("CHAVES:", sorted(m.keys()))
-        for k in ("id", "question", "outcomes", "outcomePrices", "clobTokenIds",
-                  "endDate", "closed", "volumeNum", "umaResolutionStatus"):
-            print(f"  {k!r}: {m.get(k)!r}")
-        lido, motivo = interpretar(m)
-        print("  -> interpretado:", lido if lido else f"DESCARTADO ({motivo})")
-    if brutos:
-        lido, _ = interpretar(brutos[0])
-        if lido:
-            print("\n" + "=" * 70)
-            h = historico_preco(lido["token_sim"])
-            print(f"historico de preco do primeiro mercado: {len(h)} pontos")
-            if h:
-                print("  primeiro:", h[0], " ultimo:", h[-1])
+def _padrao_precos(precos):
+    """Rotula o formato de outcomePrices, para tabular o que a API devolve."""
+    if not precos or len(precos) != 2:
+        return "malformado"
+    try:
+        a, b = float(precos[0]), float(precos[1])
+    except (TypeError, ValueError):
+        return "nao numerico"
+    if {round(a, 6), round(b, 6)} == {0.0, 1.0}:
+        return "1/0 (desfecho explicito)"
+    if a == 0.0 and b == 0.0:
+        return "0/0 (zerado)"
+    if abs(a + b - 1.0) < 0.02:
+        return "soma 1 (preco vivo)"
+    return f"outro ({a}, {b})"
+
+
+def sondar(n_amostra=400, n_detalhe=3):
+    """
+    Descobre COMO ler o desfecho de um mercado resolvido.
+
+    A primeira sonda revelou que `outcomePrices` nem sempre traz 1/0 em
+    mercado fechado -- mercados antigos vem zerados. Sem saber em quantos
+    mercados cada metodo funciona, o estudo rodaria sobre uma amostra
+    silenciosamente enviesada. Esta sonda tabula os formatos e testa as
+    alternativas de leitura do desfecho.
+    """
+    # A ordem padrao devolve os mercados mais ANTIGOS (ids 12, 17, 18 de 2020).
+    # Tenta inverter para pegar os recentes, e relata qual variante funcionou.
+    brutos, variante = None, None
+    for params in ({"order": "id", "ascending": "false"},
+                   {"order": "endDate", "ascending": "false"},
+                   {}):
+        try:
+            r = gamma_markets(limit=100, **params)
+            if isinstance(r, dict):
+                r = r.get("data", r.get("markets", []))
+            if r:
+                brutos, variante = r, (params or "ordem padrao")
+                break
+        except RuntimeError as e:
+            print(f"  variante {params} falhou: {e}")
+    if not brutos:
+        print("NENHUMA variante de ordenacao funcionou")
+        return
+    print(f"ordenacao usada: {variante}")
+    print(f"primeiro id={brutos[0].get('id')} endDate={brutos[0].get('endDate')}")
+    print(f"ultimo   id={brutos[-1].get('id')} endDate={brutos[-1].get('endDate')}\n")
+
+    # Tabela de formatos de outcomePrices sobre uma amostra maior
+    print("=" * 70)
+    print(f"FORMATOS DE outcomePrices em ate {n_amostra} mercados fechados")
+    tally, exemplos, offset, vistos = {}, {}, 0, 0
+    kw = variante if isinstance(variante, dict) else {}
+    while vistos < n_amostra:
+        try:
+            lote = gamma_markets(limit=100, offset=offset, **kw)
+        except RuntimeError:
+            break
+        if isinstance(lote, dict):
+            lote = lote.get("data", lote.get("markets", []))
+        if not lote:
+            break
+        for m in lote:
+            pad = _padrao_precos(_talvez_json(_campo(m, "outcomePrices")))
+            tally[pad] = tally.get(pad, 0) + 1
+            exemplos.setdefault(pad, m)
+            vistos += 1
+        offset += 100
+        time.sleep(0.1)
+    for pad, c in sorted(tally.items(), key=lambda kv: -kv[1]):
+        print(f"  {c:>5}  ({c/max(vistos,1):5.1%})  {pad}")
+    print(f"  total: {vistos}")
+
+    # Campos que podem carregar o desfecho
+    print("\n" + "=" * 70)
+    print("CAMPOS LIGADOS A RESOLUCAO, por formato")
+    for pad, m in exemplos.items():
+        print(f"\n[{pad}] id={m.get('id')} | {str(m.get('question'))[:60]}")
+        for k in ("closed", "active", "archived", "closedTime", "endDate",
+                  "umaResolutionStatuses", "lastTradePrice", "bestBid",
+                  "bestAsk", "spread", "liquidityNum", "volumeNum"):
+            print(f"    {k}: {m.get(k)!r}")
+
+    # O historico do CLOB resolve o desfecho quando outcomePrices nao resolve?
+    print("\n" + "=" * 70)
+    print("HISTORICO DO CLOB (ultimo preco indica o desfecho?)")
+    testados = 0
+    for pad, m in exemplos.items():
+        toks = _talvez_json(_campo(m, "clobTokenIds"))
+        if not toks:
+            print(f"  [{pad}] sem clobTokenIds")
+            continue
+        try:
+            h = historico_preco(str(toks[0]))
+        except RuntimeError as e:
+            print(f"  [{pad}] historico falhou: {e}")
+            continue
+        if not h:
+            print(f"  [{pad}] historico VAZIO ({len(h)} pontos)")
+        else:
+            print(f"  [{pad}] {len(h)} pontos | primeiro={h[0][1]:.3f} "
+                  f"ultimo={h[-1][1]:.3f} | outcomePrices={m.get('outcomePrices')}")
+        testados += 1
+        time.sleep(0.15)
+        if testados >= n_detalhe:
+            break
 
 
 if __name__ == "__main__":
