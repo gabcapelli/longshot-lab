@@ -161,3 +161,35 @@ class TestDoisLados(unittest.TestCase):
         precos = sorted(round(t["preco"], 2) for t in tr)
         self.assertEqual(precos, [0.05, 0.15],
                          f"regra pegou os precos errados: {precos}")
+
+
+class TestCompraEVenda(unittest.TestCase):
+    """Os dois lados da operacao, e o sinal do spread em cada um."""
+
+    def test_contabilidade_da_compra(self):
+        from lab.analise import backtest_comprar_azarao
+        tr = backtest_comprar_azarao(np.array([0.05, 0.05]), np.array([1.0, 0.0]),
+                                     np.array([0, 1]), limiar=0.10, spread=0.0)
+        self.assertAlmostEqual(tr[0]["r_multiplo"], 0.95 / 0.05, places=9)
+        self.assertAlmostEqual(tr[1]["r_multiplo"], -1.0, places=9)
+
+    def test_spread_encarece_a_compra_e_barateia_a_venda(self):
+        """Quem compra paga a ponta de venda; quem vende leva a de compra.
+        Se os dois se movessem no mesmo sentido, o custo estaria errado."""
+        from lab.analise import backtest_comprar_azarao
+        c = backtest_comprar_azarao(np.array([0.10]), np.array([0.0]),
+                                    np.array([0]), limiar=0.20, spread=0.02)
+        v = backtest_vender_azarao(np.array([0.10]), np.array([0.0]),
+                                   np.array([0]), limiar=0.20, spread=0.02)
+        self.assertGreater(c[0]["preco_exec"], 0.10, "compra deveria pagar mais")
+        self.assertLess(v[0]["preco_exec"], 0.10, "venda deveria receber menos")
+
+    def test_custo_corroi_a_compra(self):
+        from lab.analise import agregar, backtest_comprar_azarao
+        p, y = mundo(enviesado=False, seed=5)
+        exps = []
+        for sp in (0.0, 0.01, 0.02):
+            tr = backtest_comprar_azarao(p, y, np.arange(len(p)), limiar=0.10, spread=sp)
+            exps.append(agregar(tr, np.arange(len(tr)) // 50, reps=400)["exp_r"])
+        self.assertTrue(exps[0] > exps[1] > exps[2],
+                        f"spread nao encareceu a compra: {exps}")

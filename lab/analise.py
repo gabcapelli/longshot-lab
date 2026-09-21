@@ -160,6 +160,38 @@ def backtest_vender_azarao(p, y, ts, limiar=0.10, spread=0.01, taxa=0.0):
     return trades
 
 
+def backtest_comprar_azarao(p, y, ts, limiar=0.10, spread=0.01, taxa=0.0):
+    """
+    Regra oposta: COMPRAR SIM em todo mercado precificado ate `limiar`.
+
+    Existe porque o resultado apontou azarao BARATO, e nesse caso a operacao
+    que ganharia dinheiro e comprar, nao vender. Medir so o lado da venda
+    responderia a pergunta errada.
+
+    Contabilidade: comprar a p custa p e paga 1 se acontecer. O risco e a
+    propria aposta, entao R = p_exec e o R-multiplo e (y - p_exec)/p_exec --
+    perde 1R quando nao acontece, ganha (1-p)/p quando acontece.
+
+    Quem compra paga a ponta de VENDA, acima do meio: e por isso que o spread
+    entra somando aqui e subtraindo em backtest_vender_azarao. Num mercado de
+    3 centavos, 1 centavo de spread e um terco do preco -- o custo decide.
+    """
+    trades = []
+    for pi, yi, ti in zip(p, y, ts):
+        if not (0 < pi <= limiar):
+            continue
+        p_exec = pi + spread / 2.0     # compra na ponta de venda
+        if p_exec >= 1.0:
+            continue
+        lucro = (yi - p_exec) - taxa * yi
+        trades.append({
+            "ts": int(ti), "preco": float(pi), "preco_exec": float(p_exec),
+            "desfecho": int(yi), "lucro": float(lucro),
+            "r_multiplo": float(lucro / p_exec) if p_exec > 1e-9 else float("nan"),
+        })
+    return trades
+
+
 def agregar(trades, blocos, reps=5000):
     if not trades:
         return {"n": 0}

@@ -37,7 +37,8 @@ from datetime import datetime, timezone
 import numpy as np
 
 from lab import fetch
-from lab.analise import (agregar, backtest_vender_azarao, observacoes,
+from lab.analise import (agregar, backtest_comprar_azarao,
+                         backtest_vender_azarao, observacoes,
                          tabela_calibracao, teste_vies_azarao)
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -139,9 +140,12 @@ def analisar(mercados, rotulo, limiar, spread, reps):
     ts_m = np.array([m["ts_fim"] for m in mercados], dtype=float)
     # Os dois lados de cada mercado: o azarao costuma ser o lado NAO.
     P, Y, T, _ids = observacoes(p_sim, y_sim, ts_m)
-    trades = backtest_vender_azarao(P, Y, T, limiar=limiar, spread=spread)
+    vender = backtest_vender_azarao(P, Y, T, limiar=limiar, spread=spread)
+    comprar = backtest_comprar_azarao(P, Y, T, limiar=limiar, spread=spread)
+    trades = vender
     blocos = [semana(t["ts"]) for t in trades]
     return {"rotulo": rotulo, "n_mercados": len(p_sim), "n_obs": int(len(P)),
+            "comprar": agregar(comprar, [semana(t["ts"]) for t in comprar]),
             "fracao_no_inicial": fracao_no_inicial(p_sim),
             "calibracao": tabela_calibracao(P, Y),
             "vies_azarao": teste_vies_azarao(P, Y, limiar=limiar, reps=reps),
@@ -230,10 +234,14 @@ def main(argv=None):
         p = np.array([m["preco"] for m in oos], dtype=float)
         y = np.array([m["desfecho_sim"] for m in oos], dtype=float)
         ts = np.array([m["ts_fim"] for m in oos], dtype=float)
+        P, Y, T, _i = observacoes(p, y, ts)
         linhas = []
-        for sp in (0.0, 0.005, 0.01, 0.02):
-            tr = backtest_vender_azarao(p, y, ts, limiar=args.limiar, spread=sp)
-            linhas.append({"spread": sp, **agregar(tr, [semana(t["ts"]) for t in tr])})
+        for sp in (0.0, 0.005, 0.01, 0.02, 0.03, 0.05):
+            v = backtest_vender_azarao(P, Y, T, limiar=args.limiar, spread=sp)
+            c = backtest_comprar_azarao(P, Y, T, limiar=args.limiar, spread=sp)
+            linhas.append({"spread": sp,
+                           "vender": agregar(v, [semana(x["ts"]) for x in v]),
+                           "comprar": agregar(c, [semana(x["ts"]) for x in c])})
         sens[horas] = linhas
 
     if not resultados:
@@ -337,11 +345,15 @@ def escrever(ctx, resultados, sens):
                      f"{v['n']} apostas de azarao, p = {v['p_valor']:.4f}\n")
             L.append(f"- Faixa que a nula produziria: "
                      f"[{v['nula_ic'][0]:+.4f}, {v['nula_ic'][1]:+.4f}]\n")
-        b = r["out_of_sample"]["backtest"]
-        if b.get("n", 0):
-            L.append(f"- Vender azarao (preco ≤ {a['limiar']:.2f}, spread "
-                     f"{a['spread']:.3f}): {b['n']} apostas, **{b['exp_r']:+.4f}R**, "
-                     f"IC 95% [{b['ic_r'][0]:+.3f}, {b['ic_r'][1]:+.3f}]\n")
+        for chave, nome in (("comprar", "Comprar"), ("backtest", "Vender")):
+            b = r["out_of_sample"].get(chave) or {}
+            if b.get("n", 0):
+                L.append(f"- {nome} azarao (preco ≤ {a['limiar']:.2f}, spread "
+                         f"{a['spread']:.3f}): {b['n']} apostas, "
+                         f"**{b['exp_r']:+.4f}R**, IC 95% "
+                         f"[{b['ic_r'][0]:+.3f}, {b['ic_r'][1]:+.3f}]\n")
+        L.append("\nSe o vies aponta azarao barato, a operacao que ganharia e "
+                 "**comprar**. Medir so a venda responderia a pergunta errada.\n")
 
     L.append("\n## Como ler\n")
     L.append("- **Vies** = preco medio menos frequencia real, medido SO entre as "
@@ -402,19 +414,29 @@ def escrever(ctx, resultados, sens):
                          f"{b['diferenca']:+.3f}{marca_ic} |")
             L.append("")
             L.append("*\\* preco medio fora do IC da frequencia observada.*\n")
+            L.append("Leia esta tabela como tendo METADE das linhas independentes: "
+                     "como cada mercado entra com os dois lados, a faixa 10-20% e a "
+                     "faixa 80-90% contem os MESMOS mercados, espelhados. A simetria "
+                     "entre elas e construcao, nao confirmacao.\n")
 
         L.append(f"\n## Sensibilidade ao custo — lead {horas}h (out-of-sample)\n")
-        L.append("| Spread | Apostas | Expectancia | IC 95% |")
-        L.append("|---|---|---|---|")
+        L.append("| Spread | Comprar: expectancia | IC 95% | Vender: expectancia | IC 95% |")
+        L.append("|---|---|---|---|---|")
         for s in sens.get(horas, []):
-            if not s.get("n"):
-                L.append(f"| {s['spread']:.3f} | 0 | — | — |")
+            c, v = s.get("comprar") or {}, s.get("vender") or {}
+            if not c.get("n") and not v.get("n"):
+                L.append(f"| {s['spread']:.3f} | — | — | — | — |")
                 continue
-            L.append(f"| {s['spread']:.3f} | {s['n']} | {s['exp_r']:+.4f}R | "
-                     f"[{s['ic_r'][0]:+.3f}, {s['ic_r'][1]:+.3f}] |")
+            cc = (f"{c['exp_r']:+.4f}R | [{c['ic_r'][0]:+.3f}, {c['ic_r'][1]:+.3f}]"
+                  if c.get("n") else "— | —")
+            vv = (f"{v['exp_r']:+.4f}R | [{v['ic_r'][0]:+.3f}, {v['ic_r'][1]:+.3f}]"
+                  if v.get("n") else "— | —")
+            L.append(f"| {s['spread']:.3f} | {cc} | {vv} |")
         L.append("")
-        L.append("Um vies pode ser real e mesmo assim nao ser operavel: num mercado "
-                 "de 5 centavos, 1 centavo de spread leva um quinto do premio.\n")
+        L.append("**Esta tabela decide se o achado vira dinheiro.** Quem compra paga "
+                 "a ponta de venda; num mercado de 3 centavos, 1 centavo de spread e "
+                 "um terco do preco. Um vies real pode nao sobreviver ao custo, e ai "
+                 "ele e verdadeiro e inutil ao mesmo tempo.\n")
 
     sd = ctx.get("sens_defasagem") or []
     if sd:
